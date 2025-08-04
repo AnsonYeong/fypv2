@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export default function RootLayout({
   children,
 }: {
@@ -17,7 +19,12 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body
+        className="min-h-screen bg-background text-foreground"
+        suppressHydrationWarning={true}
+      >
+        {children}
+      </body>
     </html>
   );
 }

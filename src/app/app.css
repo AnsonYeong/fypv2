@@ -156,12 +156,12 @@ body {
 }
 
 .fancy-border {
-  padding: 3px;
+  padding: 5px;
   border-radius: 22px;
   background: linear-gradient(120deg, #6366f1, #60a5fa, #34d399, #f472b6);
   background-size: 200% 200%;
   animation: borderGradientMove 4s ease infinite;
-  box-shadow: 0 6px 32px rgba(99, 102, 241, 0.18);
+  box-shadow: 0 px 32px rgba(99, 102, 241, 0.18);
   display: inline-block;
 }
 
@@ -182,8 +182,8 @@ body {
   border-radius: 18px;
   padding: 1.5rem 1.5rem 0.00005rem 1.5rem;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-  min-width: 320px;
-  min-height: 300px;
+  min-width: 450px;
+  min-height: 250px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -243,6 +243,13 @@ body {
   height: 32px;
   background: url("/file-shredder-svgrepo-com.svg") no-repeat center/contain;
 }
+
+.landing-header-logo-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #222;
+  margin-left: 0.5rem;
+}
 .landing-header-nav {
   display: flex;
   align-items: center;
@@ -251,6 +258,7 @@ body {
 .landing-header-link {
   color: #222;
   font-size: 1rem;
+  font-weight: 700;
   text-decoration: none;
   transition: color 0.2s;
 }

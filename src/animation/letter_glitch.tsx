@@ -158,6 +158,7 @@ const LetterGlitch = ({
 
     const dpr = window.devicePixelRatio || 1;
     const rect = parent.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return;
 
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
@@ -176,9 +177,14 @@ const LetterGlitch = ({
 
   const drawLetters = () => {
     if (!context.current || letters.current.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (!rect) return;
+
     const ctx = context.current;
-    const { width, height } = canvasRef.current!.getBoundingClientRect();
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, rect.width, rect.height);
     ctx.font = `${fontSize}px monospace`;
     ctx.textBaseline = "top";
 
@@ -237,6 +243,8 @@ const LetterGlitch = ({
   };
 
   const animate = () => {
+    if (!canvasRef.current) return; // Check if canvas still exists
+
     const now = Date.now();
     if (now - lastGlitchTime.current >= glitchSpeed) {
       updateLetters();
@@ -255,15 +263,21 @@ const LetterGlitch = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    let isMounted = true;
     context.current = canvas.getContext("2d");
-    resizeCanvas();
-    animate();
+
+    if (isMounted) {
+      resizeCanvas();
+      animate();
+    }
 
     let resizeTimeout: NodeJS.Timeout;
 
     const handleResize = () => {
+      if (!isMounted) return;
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
+        if (!isMounted) return;
         cancelAnimationFrame(animationRef.current as number);
         resizeCanvas();
         animate();
@@ -273,8 +287,12 @@ const LetterGlitch = ({
     window.addEventListener("resize", handleResize);
 
     return () => {
-      cancelAnimationFrame(animationRef.current!);
+      isMounted = false;
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
       window.removeEventListener("resize", handleResize);
+      clearTimeout(resizeTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [glitchSpeed, smooth]);

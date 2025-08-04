@@ -10,7 +10,7 @@ export default function LandingPage() {
           <Link href="#" className="landing-header-logo-link">
             {/* Placeholder for icon */}
             <span className="landing-header-logo-icon" />
-            <span className="sr-only">BlockShare</span>
+            <span className="landing-header-logo-text">BlockShare</span>
           </Link>
           <nav className="landing-header-nav">
             <Link href="#features" className="landing-header-link">
