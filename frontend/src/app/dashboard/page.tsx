@@ -80,7 +80,24 @@ export function DashboardClient() {
       <div className="w-64 bg-white border-r border-border flex flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-border">
-          <h1 className="text-2xl font-bold text-primary">BlockShare</h1>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-primary">BlockShare</h1>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -286,13 +303,187 @@ export function DashboardClient() {
               </div>
             )}
             {activeSection === "dashboard" && (
-              <div className="animate-in slide-in-from-right-4 duration-500 text-center text-muted-foreground">
-                <h2 className="text-xl font-bold mb-2">
-                  Welcome to BlockShare
-                </h2>
-                <p className="font-bold">
-                  Your dashboard overview will appear here.
-                </p>
+              <div className="animate-in slide-in-from-right-4 duration-500">
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    Welcome to BlockShare
+                  </h2>
+                  <p className="text-gray-600">
+                    Your secure blockchain-powered file management system
+                  </p>
+                </div>
+
+                {/* Dashboard Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                  <div className="bg-white p-6 rounded-lg border shadow-sm">
+                    <div className="flex items-center">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <svg
+                          className="w-6 h-6 text-blue-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-sm font-medium text-gray-600">
+                          Total Files
+                        </p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {files.length}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-lg border shadow-sm">
+                    <div className="flex items-center">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <svg
+                          className="w-6 h-6 text-green-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-sm font-medium text-gray-600">
+                          Verified Files
+                        </p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {
+                            files.filter((f) => f.permissions === "admin")
+                              .length
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-lg border shadow-sm">
+                    <div className="flex items-center">
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <svg
+                          className="w-6 h-6 text-purple-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                          />
+                        </svg>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-sm font-medium text-gray-600">
+                          Blockchain Blocks
+                        </p>
+                        <p className="text-2xl font-bold text-gray-900">1</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-lg border shadow-sm">
+                    <div className="flex items-center">
+                      <div className="p-2 bg-yellow-100 rounded-lg">
+                        <svg
+                          className="w-6 h-6 text-yellow-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h6a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h6a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
+                          />
+                        </svg>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-sm font-medium text-gray-600">
+                          Storage Used
+                        </p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {(
+                            files.reduce((acc, file) => acc + file.size, 0) /
+                            (1024 * 1024)
+                          ).toFixed(1)}
+                          MB
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recent Files Section */}
+                <div className="bg-white rounded-lg border shadow-sm">
+                  <div className="p-6 border-b border-gray-200">
+                    <h3 className="text-lg font-bold text-gray-900">
+                      Recent Files
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Your most recently uploaded files
+                    </p>
+                  </div>
+
+                  {files.length > 0 ? (
+                    <div className="p-6">
+                      <FileList
+                        files={files.slice(0, 3)}
+                        onAction={handleAction}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center">
+                      <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                        <svg
+                          className="w-8 h-8 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                          />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        No files yet
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Get started by uploading your first file
+                      </p>
+                      <Button
+                        onClick={() => setUploadOpen(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Upload Your First File
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             {activeSection === "shared" && (

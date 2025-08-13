@@ -81,7 +81,7 @@ export function FileUploadDialog({
             />
             <label
               htmlFor="file-upload"
-              className="cursor-pointer text-blue-600 hover:text-blue-700"
+              className="cursor-pointer text-blue-600 hover:text-blue-700 border-2 border-blue-500 rounded-md px-4 py-2 inline-block hover:bg-blue-50 transition-colors"
             >
               Choose a file
             </label>
@@ -104,7 +104,11 @@ export function FileUploadDialog({
           <Button variant="outline" onClick={() => setIsOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleUpload} disabled={!selectedFile || !fileName}>
+          <Button
+            onClick={handleUpload}
+            disabled={!selectedFile || !fileName}
+            className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
+          >
             Upload
           </Button>
         </div>
