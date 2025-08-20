@@ -16,6 +16,16 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Environment variables
+
+Create a `.env.local` file in `frontend/` with your Pinata JWT:
+
+```
+PINATA_JWT=eyJhbGciOi...
+```
+
+This is used by the server API route at `src/app/api/upload/route.ts` to securely upload files to Pinata. Do not expose this token on the client.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

@@ -20,6 +20,7 @@ export function FileUploadDialog({
 }: FileUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -29,8 +30,27 @@ export function FileUploadDialog({
     }
   };
 
-  const handleUpload = () => {
-    if (selectedFile && fileName) {
+  const handleUpload = async () => {
+    if (!selectedFile || !fileName) return;
+    try {
+      setIsUploading(true);
+      const form = new FormData();
+      form.append("file", selectedFile);
+      form.append("name", fileName);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Upload failed: ${err.error || res.statusText}`);
+        return;
+      }
+
+      const { cid, gatewayUrl } = await res.json();
+
       const newFile: AppFile = {
         id: Date.now().toString(),
         name: fileName,
@@ -46,14 +66,18 @@ export function FileUploadDialog({
             version: 1,
             timestamp: new Date(),
             size: selectedFile.size,
-            changes: "Initial upload",
+            changes: "Initial upload (pinned to IPFS)",
           },
         ],
+        cid,
+        gatewayUrl,
       };
       onFileUploaded(newFile);
       setIsOpen(false);
       setSelectedFile(null);
       setFileName("");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -106,10 +130,10 @@ export function FileUploadDialog({
           </Button>
           <Button
             onClick={handleUpload}
-            disabled={!selectedFile || !fileName}
+            disabled={!selectedFile || !fileName || isUploading}
             className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
           >
-            Upload
+            {isUploading ? "Uploading..." : "Upload"}
           </Button>
         </div>
       </div>

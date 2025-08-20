@@ -46,6 +46,19 @@ export function DashboardClient() {
     if (action === "share") setShareOpen(true);
     if (action === "permissions") setPermissionsOpen(true);
     if (action === "versions") setVersionsOpen(true);
+    if (action === "download") {
+      const url =
+        file.gatewayUrl ||
+        (file.cid
+          ? `https://gateway.pinata.cloud/ipfs/${file.cid}`
+          : undefined);
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        alert("No download URL available for this file.");
+      }
+      return;
+    }
     if (action === "delete") {
       setFiles(files.filter((f) => f.id !== file.id));
     }

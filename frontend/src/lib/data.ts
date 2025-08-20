@@ -8,6 +8,8 @@ export interface AppFile {
   sharedWith: string[];
   permissions: "read" | "write" | "admin";
   versions: FileVersion[];
+  cid?: string;
+  gatewayUrl?: string;
 }
 
 export interface FileVersion {
