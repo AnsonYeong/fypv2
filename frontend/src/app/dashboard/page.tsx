@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
-import { AppFile, mockFiles } from "@/lib/data";
+import React, { useState, useEffect } from "react";
+import {
+  AppFile,
+  mockFiles,
+  saveFilesToStorage,
+  getFilesFromStorage,
+  clearFilesFromStorage,
+  retrieveUserFilesFromIPFS,
+} from "@/lib/data";
 import { FileList } from "./file-list";
 import { FileUploadDialog } from "./file-upload-dialog";
 import { ShareDialog } from "./share-dialog";
@@ -20,10 +27,13 @@ import {
 } from "lucide-react";
 
 export function DashboardClient() {
-  const [files, setFiles] = useState<AppFile[]>(mockFiles);
+  const [files, setFiles] = useState<AppFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<AppFile | null>(null);
   const [activeSection, setActiveSection] = useState("files");
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [ipfsError, setIpfsError] = useState<string | null>(null);
 
   const [isUploadOpen, setUploadOpen] = useState(false);
   const [isShareOpen, setShareOpen] = useState(false);
@@ -34,12 +44,65 @@ export function DashboardClient() {
   const [isLogoutOpen, setLogoutOpen] = useState(false);
 
   // Get wallet address from localStorage or session
-  React.useEffect(() => {
+  useEffect(() => {
     const storedAddress = localStorage.getItem("walletAddress");
     if (storedAddress) {
       setWalletAddress(storedAddress);
     }
   }, []);
+
+  // Initialize files from storage and IPFS when wallet address changes
+  useEffect(() => {
+    const initializeFiles = async () => {
+      try {
+        setIsLoading(true);
+        setIpfsError(null);
+
+        if (walletAddress) {
+          // User is logged in, try to retrieve their files from IPFS and storage
+          const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
+          if (userFiles.length > 0) {
+            setFiles(userFiles);
+          } else {
+            // If no user files, check if there are any stored files
+            const storedFiles = getFilesFromStorage(walletAddress);
+            if (storedFiles.length > 0) {
+              setFiles(storedFiles);
+            } else {
+              // No files found, start with empty list
+              setFiles([]);
+            }
+          }
+        } else {
+          // No wallet connected, check for demo files
+          const storedFiles = getFilesFromStorage("demo-user");
+          if (storedFiles.length > 0) {
+            setFiles(storedFiles);
+          } else {
+            // If no stored files, use mock files for demonstration
+            setFiles(mockFiles);
+            // Save mock files to storage for demo user
+            saveFilesToStorage(mockFiles, "demo-user");
+          }
+        }
+      } catch (error) {
+        console.error("Error initializing files:", error);
+        setIpfsError(
+          "Failed to load files from IPFS. Some files may not be accessible."
+        );
+        // Fallback to stored files
+        const fallbackFiles = getFilesFromStorage(walletAddress || "demo-user");
+        setFiles(fallbackFiles.length > 0 ? fallbackFiles : mockFiles);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    // Only initialize if we have a wallet address or if this is the first load
+    if (walletAddress !== null) {
+      initializeFiles();
+    }
+  }, [walletAddress]);
 
   const handleAction = (action: string, file: AppFile) => {
     setSelectedFile(file);
@@ -60,12 +123,22 @@ export function DashboardClient() {
       return;
     }
     if (action === "delete") {
-      setFiles(files.filter((f) => f.id !== file.id));
+      const updatedFiles = files.filter((f) => f.id !== file.id);
+      setFiles(updatedFiles);
+      // Save updated files to storage for current user
+      const currentUserId = walletAddress || "demo-user";
+      saveFilesToStorage(updatedFiles, currentUserId);
     }
   };
 
   const handleAddNewFile = (newFile: AppFile) => {
-    setFiles([newFile, ...files]);
+    const updatedFiles = [newFile, ...files];
+    setFiles(updatedFiles);
+    // Save updated files to storage for current user
+    const currentUserId = walletAddress || "demo-user";
+    saveFilesToStorage(updatedFiles, currentUserId);
+    // Clear any previous IPFS errors since we just uploaded successfully
+    setIpfsError(null);
   };
 
   const handleLogout = () => {
@@ -74,12 +147,81 @@ export function DashboardClient() {
   };
 
   const confirmLogout = () => {
+    // Don't clear files from storage - keep them for IPFS retrieval on next login
+    // Only clear the current user session
     localStorage.removeItem("walletAddress");
     setWalletAddress(null);
+    setFiles([]);
+    setIpfsError(null);
     setLogoutOpen(false);
     // Redirect to login page
     window.location.href = "/login";
   };
+
+  // Function to refresh files from IPFS
+  const refreshFilesFromIPFS = async () => {
+    try {
+      setIsRefreshing(true);
+      setIpfsError(null);
+
+      if (walletAddress) {
+        const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
+        setFiles(userFiles);
+      } else {
+        const storedFiles = getFilesFromStorage("demo-user");
+        setFiles(storedFiles);
+      }
+    } catch (error) {
+      console.error("Error refreshing files:", error);
+      setIpfsError(
+        "Failed to refresh files from IPFS. Some files may not be accessible."
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Function to clear all user data (for account deletion)
+  const clearAllUserData = () => {
+    if (walletAddress) {
+      clearFilesFromStorage(walletAddress);
+    }
+    clearFilesFromStorage("demo-user");
+    setFiles([]);
+    setIpfsError(null);
+  };
+
+  // Function to handle user switching (when wallet changes)
+  const handleUserSwitch = async (newWalletAddress: string | null) => {
+    try {
+      setIsLoading(true);
+      setIpfsError(null);
+
+      if (newWalletAddress) {
+        // New user logged in, retrieve their files
+        const userFiles = await retrieveUserFilesFromIPFS(newWalletAddress);
+        setFiles(userFiles);
+      } else {
+        // No wallet, show demo files
+        const storedFiles = getFilesFromStorage("demo-user");
+        setFiles(storedFiles);
+      }
+    } catch (error) {
+      console.error("Error switching users:", error);
+      setIpfsError(
+        "Failed to load user files. Some files may not be accessible."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Watch for wallet address changes and handle user switching
+  useEffect(() => {
+    if (walletAddress) {
+      handleUserSwitch(walletAddress);
+    }
+  }, [walletAddress]);
 
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
@@ -185,6 +327,34 @@ export function DashboardClient() {
                   <button className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-accent rounded flex items-center space-x-2">
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "Are you sure you want to clear all your data? This will remove all stored files and cannot be undone."
+                        )
+                      ) {
+                        clearAllUserData();
+                        setProfileDropdownOpen(false);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded flex items-center space-x-2"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                    <span>Clear All Data</span>
                   </button>
                   <button
                     onClick={handleLogout}
@@ -310,202 +480,244 @@ export function DashboardClient() {
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto p-6">
           <div className="transition-all duration-500 ease-in-out">
-            {activeSection === "files" && (
-              <div className="animate-in slide-in-from-left-4 duration-500">
-                <FileList files={files} onAction={handleAction} />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center space-y-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="text-gray-600">Loading your files...</p>
+                </div>
               </div>
-            )}
-            {activeSection === "dashboard" && (
-              <div className="animate-in slide-in-from-right-4 duration-500">
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    Welcome to BlockShare
-                  </h2>
-                  <p className="text-gray-600">
-                    Your secure blockchain-powered file management system
-                  </p>
-                </div>
-
-                {/* Dashboard Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                  <div className="bg-white p-6 rounded-lg border shadow-sm">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <svg
-                          className="w-6 h-6 text-blue-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          Total Files
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {files.length}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-lg border shadow-sm">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <svg
-                          className="w-6 h-6 text-green-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          Verified Files
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {
-                            files.filter((f) => f.permissions === "admin")
-                              .length
-                          }
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-lg border shadow-sm">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-purple-100 rounded-lg">
-                        <svg
-                          className="w-6 h-6 text-purple-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                          />
-                        </svg>
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          Blockchain Blocks
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">1</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-lg border shadow-sm">
-                    <div className="flex items-center">
-                      <div className="p-2 bg-yellow-100 rounded-lg">
-                        <svg
-                          className="w-6 h-6 text-yellow-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h6a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h6a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
-                          />
-                        </svg>
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">
-                          Storage Used
-                        </p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {(
-                            files.reduce((acc, file) => acc + file.size, 0) /
-                            (1024 * 1024)
-                          ).toFixed(1)}
-                          MB
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Files Section */}
-                <div className="bg-white rounded-lg border shadow-sm">
-                  <div className="p-6 border-b border-gray-200">
-                    <h3 className="text-lg font-bold text-gray-900">
-                      Recent Files
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      Your most recently uploaded files
-                    </p>
-                  </div>
-
-                  {files.length > 0 ? (
-                    <div className="p-6">
-                      <FileList
-                        files={files.slice(0, 3)}
-                        onAction={handleAction}
-                      />
-                    </div>
-                  ) : (
-                    <div className="p-12 text-center">
-                      <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                        <svg
-                          className="w-8 h-8 text-gray-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                          />
-                        </svg>
-                      </div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">
-                        No files yet
-                      </h3>
-                      <p className="text-gray-600 mb-4">
-                        Get started by uploading your first file
-                      </p>
+            ) : (
+              <>
+                {activeSection === "files" && (
+                  <div className="animate-in slide-in-from-left-4 duration-500">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        Your Files
+                      </h2>
                       <Button
-                        onClick={() => setUploadOpen(true)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        variant="outline"
+                        onClick={refreshFilesFromIPFS}
+                        disabled={isRefreshing}
+                        className="text-sm"
                       >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Upload Your First File
+                        {isRefreshing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                            Refreshing...
+                          </>
+                        ) : (
+                          "Refresh Files"
+                        )}
                       </Button>
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {activeSection === "shared" && (
-              <div className="animate-in slide-in-from-bottom-4 duration-500 text-center text-muted-foreground">
-                <h2 className="text-xl font-bold mb-2">Shared With Me</h2>
-                <p className="font-bold">
-                  Files shared with you will appear here.
-                </p>
-              </div>
+                    {ipfsError && (
+                      <div
+                        className="bg-red-100 border border-red-200 text-red-800 px-4 py-3 rounded relative mb-4"
+                        role="alert"
+                      >
+                        <strong className="font-bold">Error!</strong>
+                        <span className="block sm:inline"> {ipfsError}</span>
+                      </div>
+                    )}
+                    <FileList files={files} onAction={handleAction} />
+                  </div>
+                )}
+                {activeSection === "dashboard" && (
+                  <div className="animate-in slide-in-from-right-4 duration-500">
+                    <div className="mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                        Welcome to BlockShare
+                      </h2>
+                      <p className="text-gray-600">
+                        Your secure blockchain-powered file management system
+                      </p>
+                    </div>
+
+                    {/* Dashboard Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                        <div className="flex items-center">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <svg
+                              className="w-6 h-6 text-blue-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                              />
+                            </svg>
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-gray-600">
+                              Total Files
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900">
+                              {files.length}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                        <div className="flex items-center">
+                          <div className="p-2 bg-green-100 rounded-lg">
+                            <svg
+                              className="w-6 h-6 text-green-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-gray-600">
+                              IPFS Files
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900">
+                              {files.filter((f) => f.cid).length}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                        <div className="flex items-center">
+                          <div className="p-2 bg-purple-100 rounded-lg">
+                            <svg
+                              className="w-6 h-6 text-purple-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                              />
+                            </svg>
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-gray-600">
+                              Blockchain Files
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900">
+                              {files.filter((f) => f.cid).length}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                        <div className="flex items-center">
+                          <div className="p-2 bg-yellow-100 rounded-lg">
+                            <svg
+                              className="w-6 h-6 text-yellow-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h6a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h6a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
+                              />
+                            </svg>
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-gray-600">
+                              Storage Used
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900">
+                              {(
+                                files.reduce(
+                                  (acc, file) => acc + file.size,
+                                  0
+                                ) /
+                                (1024 * 1024)
+                              ).toFixed(1)}
+                              MB
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recent Files Section */}
+                    <div className="bg-white rounded-lg border shadow-sm">
+                      <div className="p-6 border-b border-gray-200">
+                        <h3 className="text-lg font-bold text-gray-900">
+                          Recent Files
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Your most recently uploaded files
+                        </p>
+                      </div>
+
+                      {files.length > 0 ? (
+                        <div className="p-6">
+                          <FileList
+                            files={files.slice(0, 3)}
+                            onAction={handleAction}
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-12 text-center">
+                          <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                            <svg
+                              className="w-8 h-8 text-gray-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                              />
+                            </svg>
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">
+                            No files yet
+                          </h3>
+                          <p className="text-gray-600 mb-4">
+                            Get started by uploading your first file
+                          </p>
+                          <Button
+                            onClick={() => setUploadOpen(true)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Upload Your First File
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {activeSection === "shared" && (
+                  <div className="animate-in slide-in-from-bottom-4 duration-500 text-center text-muted-foreground">
+                    <h2 className="text-xl font-bold mb-2">Shared With Me</h2>
+                    <p className="font-bold">
+                      Files shared with you will appear here.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </main>
@@ -515,6 +727,7 @@ export function DashboardClient() {
         isOpen={isUploadOpen}
         setIsOpen={setUploadOpen}
         onFileUploaded={handleAddNewFile}
+        userId={walletAddress || "demo-user"}
       />
 
       {selectedFile && (

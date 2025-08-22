@@ -1,22 +1,24 @@
 "use client";
 
 import React, { useState } from "react";
-import { AppFile } from "@/lib/data";
+import { AppFile, saveFilesToStorage, getFilesFromStorage } from "@/lib/data";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Loader2 } from "lucide-react";
 
 interface FileUploadDialogProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   onFileUploaded: (file: AppFile) => void;
+  userId?: string;
 }
 
 export function FileUploadDialog({
   isOpen,
   setIsOpen,
   onFileUploaded,
+  userId = "demo-user",
 }: FileUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -72,6 +74,16 @@ export function FileUploadDialog({
         cid,
         gatewayUrl,
       };
+
+      // Save to localStorage for the current user
+      try {
+        const existingFiles = getFilesFromStorage(userId);
+        const updatedFiles = [newFile, ...existingFiles];
+        saveFilesToStorage(updatedFiles, userId);
+      } catch (error) {
+        console.error("Error saving to localStorage:", error);
+      }
+
       onFileUploaded(newFile);
       setIsOpen(false);
       setSelectedFile(null);
@@ -82,7 +94,39 @@ export function FileUploadDialog({
   };
 
   return (
-    <Dialog isOpen={isOpen} setIsOpen={setIsOpen} title="Upload File">
+    <Dialog
+      isOpen={isOpen}
+      setIsOpen={setIsOpen}
+      title="Upload File"
+      isLoading={isUploading}
+      disableCloseOnOverlayClick={isUploading}
+      loadingContent={
+        <div className="text-center space-y-4">
+          <Loader2 className="h-16 w-16 text-blue-600 animate-spin mx-auto" />
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Uploading to IPFS...
+            </h3>
+            <p className="text-sm text-gray-600 max-w-xs mx-auto">
+              Please wait while we securely upload your file to the
+              decentralized network. This may take a few moments depending on
+              file size.
+            </p>
+          </div>
+          <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+            <div
+              className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"
+              style={{ animationDelay: "0.2s" }}
+            ></div>
+            <div
+              className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"
+              style={{ animationDelay: "0.4s" }}
+            ></div>
+          </div>
+        </div>
+      }
+    >
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-2">File Name</label>
@@ -125,7 +169,11 @@ export function FileUploadDialog({
         </div>
 
         <div className="flex justify-end space-x-2 pt-4">
-          <Button variant="outline" onClick={() => setIsOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => setIsOpen(false)}
+            disabled={isUploading}
+          >
             Cancel
           </Button>
           <Button
@@ -133,7 +181,14 @@ export function FileUploadDialog({
             disabled={!selectedFile || !fileName || isUploading}
             className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
           >
-            {isUploading ? "Uploading..." : "Upload"}
+            {isUploading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              "Upload"
+            )}
           </Button>
         </div>
       </div>
