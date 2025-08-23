@@ -569,3 +569,68 @@ body {
   background: #b6f5d8; /* mint green */
   padding: 4rem 0 3rem 0;
 }
+
+/* Tech Stack Logo Loop Styling */
+.tech-stack-logos {
+  margin-top: 3rem;
+  padding: 2rem 0;
+  background: transparent;
+  border-radius: 0;
+  backdrop-filter: none;
+}
+
+.tech-stack-logo-loop {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Custom styling for the logo loop within tech stack */
+.tech-stack-logo-loop .logoloop {
+  --logoloop-gap: 48px;
+  --logoloop-logoHeight: 48px;
+}
+
+.tech-stack-logo-loop .logoloop__item img {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.15));
+  transition: all 0.3s ease;
+  opacity: 0.85;
+}
+
+.tech-stack-logo-loop .logoloop__item:hover img {
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.25));
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+.tech-stack-logo-loop .logoloop__node {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.15));
+  transition: all 0.3s ease;
+  opacity: 0.85;
+}
+
+.tech-stack-logo-loop .logoloop__item:hover .logoloop__node {
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.25));
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+/* Enhanced fade effect for better blending */
+.tech-stack-logo-loop .logoloop--fade::before,
+.tech-stack-logo-loop .logoloop--fade::after {
+  background: linear-gradient(
+    to right,
+    #b6f5d8 0%,
+    rgba(182, 245, 216, 0.8) 20%,
+    rgba(182, 245, 216, 0) 100%
+  );
+}
+
+.tech-stack-logo-loop .logoloop--fade::after {
+  background: linear-gradient(
+    to left,
+    #b6f5d8 0%,
+    rgba(182, 245, 216, 0.8) 20%,
+    rgba(182, 245, 216, 0) 100%
+  );
+}

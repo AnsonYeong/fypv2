@@ -18,15 +18,150 @@
   --ring: #2563eb;
 }
 
-@theme inline {
+/* CSS Custom Properties for theming */
+:root {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", Courier, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* 3D Button Effects */
+.btn-3d {
+  transform-style: preserve-3d;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.btn-3d:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.btn-3d:active {
+  transform: translateY(0px) scale(1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* 3D Primary Button */
+.btn-3d-primary {
+  background: linear-gradient(145deg, #3b82f6, #2563eb);
+  color: white;
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3), 0 2px 4px rgba(37, 99, 235, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-3d-primary:hover {
+  background: linear-gradient(145deg, #2563eb, #1d4ed8);
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.4),
+    0 4px 8px rgba(37, 99, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 3D Secondary Button */
+.btn-3d-secondary {
+  background: linear-gradient(145deg, #f8fafc, #f1f5f9);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.btn-3d-secondary:hover {
+  background: linear-gradient(145deg, #f1f5f9, #e2e8f0);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* 3D Destructive Button */
+.btn-3d-destructive {
+  background: linear-gradient(145deg, #f87171, #ef4444);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3), 0 2px 4px rgba(239, 68, 68, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-3d-destructive:hover {
+  background: linear-gradient(145deg, #ef4444, #dc2626);
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4),
+    0 4px 8px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 3D Ghost Button */
+.btn-3d-ghost {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.8),
+    rgba(248, 250, 252, 0.6)
+  );
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.btn-3d-ghost:hover {
+  background: linear-gradient(
+    145deg,
+    rgba(241, 245, 249, 0.9),
+    rgba(226, 232, 240, 0.7)
+  );
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* 3D Dashboard Cards */
+.card-3d {
+  transform-style: preserve-3d;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border: 1px solid #000000;
+  background: linear-gradient(145deg, #ffffff, #f8fafc);
+}
+
+.card-3d:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 6px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.card-3d:active {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12), 0 3px 6px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* 3D Card with Icon Background */
+.card-3d-icon {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-3d-icon::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transform: rotate(45deg);
+  transition: all 0.6s ease;
+  opacity: 0;
+}
+
+.card-3d-icon:hover::before {
+  opacity: 1;
+  transform: rotate(45deg) translate(50%, 50%);
 }

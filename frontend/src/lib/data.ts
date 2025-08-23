@@ -85,6 +85,59 @@ export const clearFilesFromStorage = (userId?: string) => {
   }
 };
 
+// Function to retrieve all files for a user from IPFS
+export const retrieveUserFilesFromIPFS = async (
+  userId: string
+): Promise<AppFile[]> => {
+  try {
+    // Get stored files for the user
+    const storedFiles = getFilesFromStorage(userId);
+
+    // Filter files that have IPFS CIDs
+    const ipfsFiles = storedFiles.filter((file) => file.cid);
+
+    if (ipfsFiles.length === 0) {
+      return storedFiles;
+    }
+
+    // Extract CIDs for batch retrieval
+    const cids = ipfsFiles.map((file) => file.cid!);
+
+    // Retrieve multiple files from IPFS via our API
+    const ipfsResults = await retrieveMultipleFilesFromIPFS(cids);
+
+    // Map IPFS results back to stored files and update metadata
+    const verifiedFiles = ipfsFiles.map((file) => {
+      const ipfsResult = ipfsResults.find((result) => result.cid === file.cid);
+
+      if (ipfsResult && !("error" in ipfsResult)) {
+        // Update file with latest IPFS metadata
+        return {
+          ...file,
+          size: ipfsResult.size || file.size,
+          type: ipfsResult.type || file.type,
+          gatewayUrl: ipfsResult.gatewayUrl || file.gatewayUrl,
+          lastModified: ipfsResult.lastModified || file.lastModified,
+        };
+      } else if (ipfsResult && "error" in ipfsResult) {
+        console.warn(`File ${file.cid} has error:`, ipfsResult.error);
+        // Keep file even if IPFS retrieval fails, but mark it
+        return {
+          ...file,
+          // You could add an error flag here if needed
+        };
+      }
+
+      return file; // Keep file as is if no IPFS result found
+    });
+
+    return verifiedFiles;
+  } catch (error) {
+    console.error("Error retrieving user files from IPFS:", error);
+    return getFilesFromStorage(userId); // Fallback to stored files
+  }
+};
+
 // Function to retrieve file metadata from IPFS via our API
 export const retrieveFileFromIPFS = async (
   cid: string
@@ -162,126 +215,6 @@ export const retrieveMultipleFilesFromIPFS = async (
     }));
   }
 };
-
-// Function to retrieve all files for a user from IPFS
-export const retrieveUserFilesFromIPFS = async (
-  userId: string
-): Promise<AppFile[]> => {
-  try {
-    // Get stored files for the user
-    const storedFiles = getFilesFromStorage(userId);
-
-    // Filter files that have IPFS CIDs
-    const ipfsFiles = storedFiles.filter((file) => file.cid);
-
-    if (ipfsFiles.length === 0) {
-      return storedFiles;
-    }
-
-    // Extract CIDs for batch retrieval
-    const cids = ipfsFiles.map((file) => file.cid!);
-
-    // Retrieve multiple files from IPFS via our API
-    const ipfsResults = await retrieveMultipleFilesFromIPFS(cids);
-
-    // Map IPFS results back to stored files and update metadata
-    const verifiedFiles = ipfsFiles.map((file) => {
-      const ipfsResult = ipfsResults.find((result) => result.cid === file.cid);
-
-      if (ipfsResult && !("error" in ipfsResult)) {
-        // Update file with latest IPFS metadata
-        return {
-          ...file,
-          size: ipfsResult.size || file.size,
-          type: ipfsResult.type || file.type,
-          gatewayUrl: ipfsResult.gatewayUrl || file.gatewayUrl,
-          lastModified: ipfsResult.lastModified || file.lastModified,
-        };
-      } else if (ipfsResult && "error" in ipfsResult) {
-        console.warn(`File ${file.cid} has error:`, ipfsResult.error);
-        // Keep file even if IPFS retrieval fails, but mark it
-        return {
-          ...file,
-          // You could add an error flag here if needed
-        };
-      }
-
-      return file; // Keep file as is if no IPFS result found
-    });
-
-    return verifiedFiles;
-  } catch (error) {
-    console.error("Error retrieving user files from IPFS:", error);
-    return getFilesFromStorage(userId); // Fallback to stored files
-  }
-};
-
-export const mockFiles: AppFile[] = [
-  {
-    id: "1",
-    name: "Project Proposal.pdf",
-    size: 2048576,
-    type: "pdf",
-    lastModified: new Date("2024-01-15"),
-    owner: "John Doe",
-    sharedWith: ["Jane Smith", "Bob Johnson"],
-    permissions: "read",
-    versions: [
-      {
-        id: "v1",
-        version: 1,
-        timestamp: new Date("2024-01-10"),
-        size: 1024000,
-        changes: "Initial version",
-      },
-      {
-        id: "v2",
-        version: 2,
-        timestamp: new Date("2024-01-15"),
-        size: 2048576,
-        changes: "Updated budget section",
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Design Mockups.sketch",
-    size: 15728640,
-    type: "sketch",
-    lastModified: new Date("2024-01-12"),
-    owner: "Jane Smith",
-    sharedWith: ["John Doe"],
-    permissions: "write",
-    versions: [
-      {
-        id: "v1",
-        version: 1,
-        timestamp: new Date("2024-01-12"),
-        size: 15728640,
-        changes: "Initial design",
-      },
-    ],
-  },
-  {
-    id: "3",
-    name: "Meeting Notes.docx",
-    size: 512000,
-    type: "docx",
-    lastModified: new Date("2024-01-14"),
-    owner: "Bob Johnson",
-    sharedWith: [],
-    permissions: "admin",
-    versions: [
-      {
-        id: "v1",
-        version: 1,
-        timestamp: new Date("2024-01-14"),
-        size: 512000,
-        changes: "Initial notes",
-      },
-    ],
-  },
-];
 
 export const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 Bytes";

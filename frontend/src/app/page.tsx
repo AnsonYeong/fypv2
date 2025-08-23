@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import "./app.css";
+import LogoLoop from "../animation/LogoLoop";
 
 export default function LandingPage() {
   return (
@@ -89,6 +90,53 @@ export default function LandingPage() {
         </section>
         {/* Tech Stack Section */}
         <section id="tech-stack" className="landing-tech-section">
+          {/* Tech Stack Logo Loop */}
+          <div className="tech-stack-logos">
+            <LogoLoop
+              logos={[
+                {
+                  src: "/coin.svg",
+                  alt: "Coin",
+                  href: "#",
+                  title: "Coin",
+                },
+                {
+                  src: "/ethereum.svg",
+                  alt: "Ethereum",
+                  href: "https://ethereum.org/",
+                  title: "Ethereum",
+                },
+                {
+                  src: "/nextjs.svg",
+                  alt: "Next.js",
+                  href: "https://nextjs.org/",
+                  title: "Next.js",
+                },
+                {
+                  src: "/react.svg",
+                  alt: "React",
+                  href: "https://reactjs.org/",
+                  title: "React",
+                },
+                {
+                  src: "/typescript.svg",
+                  alt: "TypeScript",
+                  href: "https://www.typescriptlang.org/",
+                  title: "TypeScript",
+                },
+              ]}
+              speed={80}
+              direction="left"
+              logoHeight={48}
+              gap={48}
+              pauseOnHover={true}
+              fadeOut={true}
+              scaleOnHover={true}
+              ariaLabel="Technology stack logos"
+              className="tech-stack-logo-loop"
+            />
+          </div>
+
           <div className="landing-features-header">
             <span className="landing-features-badge">Tech Stack</span>
             <h2 className="landing-features-title">What Powers BlockShare?</h2>
@@ -97,6 +145,7 @@ export default function LandingPage() {
               stack.
             </p>
           </div>
+
           <div className="landing-features-cards">
             <div className="landing-feature-card">
               <div className="landing-feature-icon landing-feature-icon-nextjs" />

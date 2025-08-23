@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import {
   AppFile,
-  mockFiles,
   saveFilesToStorage,
   getFilesFromStorage,
   clearFilesFromStorage,
@@ -34,6 +33,7 @@ export function DashboardClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ipfsError, setIpfsError] = useState<string | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
 
   const [isUploadOpen, setUploadOpen] = useState(false);
   const [isShareOpen, setShareOpen] = useState(false);
@@ -80,9 +80,7 @@ export function DashboardClient() {
             setFiles(storedFiles);
           } else {
             // If no stored files, use mock files for demonstration
-            setFiles(mockFiles);
-            // Save mock files to storage for demo user
-            saveFilesToStorage(mockFiles, "demo-user");
+            setFiles([]);
           }
         }
       } catch (error) {
@@ -92,7 +90,7 @@ export function DashboardClient() {
         );
         // Fallback to stored files
         const fallbackFiles = getFilesFromStorage(walletAddress || "demo-user");
-        setFiles(fallbackFiles.length > 0 ? fallbackFiles : mockFiles);
+        setFiles(fallbackFiles.length > 0 ? fallbackFiles : []);
       } finally {
         setIsLoading(false);
       }
@@ -104,7 +102,7 @@ export function DashboardClient() {
     }
   }, [walletAddress]);
 
-  const handleAction = (action: string, file: AppFile) => {
+  const handleAction = async (action: string, file: AppFile) => {
     setSelectedFile(file);
     if (action === "share") setShareOpen(true);
     if (action === "permissions") setPermissionsOpen(true);
@@ -123,11 +121,72 @@ export function DashboardClient() {
       return;
     }
     if (action === "delete") {
-      const updatedFiles = files.filter((f) => f.id !== file.id);
-      setFiles(updatedFiles);
-      // Save updated files to storage for current user
-      const currentUserId = walletAddress || "demo-user";
-      saveFilesToStorage(updatedFiles, currentUserId);
+      // Show confirmation dialog
+      const isConfirmed = confirm(
+        `Are you sure you want to delete "${file.name}"?\n\nThis will:\n• Remove the file from your dashboard\n• Delete the file from IPFS permanently\n• This action cannot be undone`
+      );
+
+      if (!isConfirmed) return;
+
+      try {
+        // Show loading state for this specific file
+        setDeletingFile(file.id);
+
+        // First, delete from IPFS if it has a CID
+        if (file.cid) {
+          const deleteResponse = await fetch("/api/ipfs/delete", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              cid: file.cid,
+              fileName: file.name,
+            }),
+          });
+
+          if (!deleteResponse.ok) {
+            const errorData = await deleteResponse.json().catch(() => ({}));
+            throw new Error(
+              errorData.message ||
+                `Failed to delete file from IPFS: ${deleteResponse.statusText}`
+            );
+          }
+
+          const deleteResult = await deleteResponse.json();
+          console.log("IPFS deletion result:", deleteResult);
+        }
+
+        // Then remove from local storage and state
+        const updatedFiles = files.filter((f) => f.id !== file.id);
+        setFiles(updatedFiles);
+
+        // Save updated files to storage for current user
+        const currentUserId = walletAddress || "demo-user";
+        saveFilesToStorage(updatedFiles, currentUserId);
+
+        // Show success message
+        alert(
+          `File "${file.name}" has been successfully deleted from both IPFS and your dashboard.`
+        );
+      } catch (error) {
+        console.error("Error deleting file:", error);
+
+        // Show error message
+        const errorMessage =
+          error instanceof Error ? error.message : "An unknown error occurred";
+        alert(
+          `Failed to delete file: ${errorMessage}\n\nThe file has been removed from your dashboard but may still exist on IPFS.`
+        );
+
+        // Even if IPFS deletion fails, remove from local storage
+        const updatedFiles = files.filter((f) => f.id !== file.id);
+        setFiles(updatedFiles);
+        const currentUserId = walletAddress || "demo-user";
+        saveFilesToStorage(updatedFiles, currentUserId);
+      } finally {
+        setDeletingFile(null);
+      }
     }
   };
 
@@ -469,7 +528,7 @@ export function DashboardClient() {
             </div>
             <Button
               onClick={() => setUploadOpen(true)}
-              className="!bg-blue-600 hover:!bg-blue-700 text-white border-2 border-blue-600"
+              className="btn-3d btn-3d-primary"
             >
               <Plus className="mr-2 h-4 w-4" />
               Upload File
@@ -499,7 +558,7 @@ export function DashboardClient() {
                         variant="outline"
                         onClick={refreshFilesFromIPFS}
                         disabled={isRefreshing}
-                        className="text-sm"
+                        className="btn-3d btn-3d-secondary"
                       >
                         {isRefreshing ? (
                           <>
@@ -520,7 +579,11 @@ export function DashboardClient() {
                         <span className="block sm:inline"> {ipfsError}</span>
                       </div>
                     )}
-                    <FileList files={files} onAction={handleAction} />
+                    <FileList
+                      files={files}
+                      onAction={handleAction}
+                      deletingFile={deletingFile}
+                    />
                   </div>
                 )}
                 {activeSection === "dashboard" && (
@@ -536,7 +599,7 @@ export function DashboardClient() {
 
                     {/* Dashboard Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                      <div className="card-3d card-3d-icon bg-white p-6 rounded-lg border shadow-sm">
                         <div className="flex items-center">
                           <div className="p-2 bg-blue-100 rounded-lg">
                             <svg
@@ -564,7 +627,7 @@ export function DashboardClient() {
                         </div>
                       </div>
 
-                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                      <div className="card-3d card-3d-icon bg-white p-6 rounded-lg border shadow-sm">
                         <div className="flex items-center">
                           <div className="p-2 bg-green-100 rounded-lg">
                             <svg
@@ -592,7 +655,7 @@ export function DashboardClient() {
                         </div>
                       </div>
 
-                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                      <div className="card-3d card-3d-icon bg-white p-6 rounded-lg border shadow-sm">
                         <div className="flex items-center">
                           <div className="p-2 bg-purple-100 rounded-lg">
                             <svg
@@ -620,7 +683,7 @@ export function DashboardClient() {
                         </div>
                       </div>
 
-                      <div className="bg-white p-6 rounded-lg border shadow-sm">
+                      <div className="card-3d card-3d-icon bg-white p-6 rounded-lg border shadow-sm">
                         <div className="flex items-center">
                           <div className="p-2 bg-yellow-100 rounded-lg">
                             <svg
@@ -672,6 +735,7 @@ export function DashboardClient() {
                           <FileList
                             files={files.slice(0, 3)}
                             onAction={handleAction}
+                            deletingFile={deletingFile}
                           />
                         </div>
                       ) : (
@@ -699,7 +763,7 @@ export function DashboardClient() {
                           </p>
                           <Button
                             onClick={() => setUploadOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            className="btn-3d btn-3d-primary"
                           >
                             <Plus className="mr-2 h-4 w-4" />
                             Upload Your First File

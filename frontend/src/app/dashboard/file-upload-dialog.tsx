@@ -173,13 +173,14 @@ export function FileUploadDialog({
             variant="outline"
             onClick={() => setIsOpen(false)}
             disabled={isUploading}
+            className="btn-3d btn-3d-secondary"
           >
             Cancel
           </Button>
           <Button
             onClick={handleUpload}
             disabled={!selectedFile || !fileName || isUploading}
-            className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
+            className="btn-3d btn-3d-primary"
           >
             {isUploading ? (
               <>
