@@ -10,6 +10,12 @@ export interface AppFile {
   versions: FileVersion[];
   cid?: string;
   gatewayUrl?: string;
+  encrypted?: boolean;
+  encryptionData?: {
+    key: string;
+    iv: string;
+    algorithm: string;
+  };
 }
 
 export interface FileVersion {

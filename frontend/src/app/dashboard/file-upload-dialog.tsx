@@ -6,6 +6,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, X, Loader2 } from "lucide-react";
+import { KeyDialog } from "./key-dialog";
 
 interface FileUploadDialogProps {
   isOpen: boolean;
@@ -23,6 +24,15 @@ export function FileUploadDialog({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [shouldEncrypt, setShouldEncrypt] = useState(false);
+  const [showEncryptionDetails, setShowEncryptionDetails] = useState(false);
+  const [encryptionDetails, setEncryptionDetails] = useState<{
+    key: string;
+    iv: string;
+    algorithm: string;
+  } | null>(null);
+  const [uploadedCid, setUploadedCid] = useState<string>("");
+  const [uploadedFilename, setUploadedFilename] = useState<string>("");
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -39,6 +49,9 @@ export function FileUploadDialog({
       const form = new FormData();
       form.append("file", selectedFile);
       form.append("name", fileName);
+      if (shouldEncrypt) {
+        form.append("encrypt", "true");
+      }
 
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -51,7 +64,7 @@ export function FileUploadDialog({
         return;
       }
 
-      const { cid, gatewayUrl } = await res.json();
+      const { cid, gatewayUrl, encrypted, encryptionData } = await res.json();
 
       const newFile: AppFile = {
         id: Date.now().toString(),
@@ -73,6 +86,15 @@ export function FileUploadDialog({
         ],
         cid,
         gatewayUrl,
+        encrypted: encrypted || false,
+        encryptionData:
+          encrypted && encryptionData
+            ? {
+                key: encryptionData.key,
+                iv: encryptionData.iv,
+                algorithm: encryptionData.algorithm,
+              }
+            : undefined,
       };
 
       // Save to localStorage for the current user
@@ -85,18 +107,60 @@ export function FileUploadDialog({
       }
 
       onFileUploaded(newFile);
-      setIsOpen(false);
-      setSelectedFile(null);
-      setFileName("");
+
+      // Store the CID and filename for display
+      setUploadedCid(cid);
+      setUploadedFilename(fileName);
+
+      // Show encryption success message if file was encrypted
+      if (encrypted && encryptionData) {
+        // Store encryption details for the success dialog
+        setEncryptionDetails({
+          key: encryptionData.key,
+          iv: encryptionData.iv,
+          algorithm: encryptionData.algorithm,
+        });
+
+        // Automatically show the encryption details dialog
+        setShowEncryptionDetails(true);
+
+        // Don't close the main dialog yet - let user see the encryption details first
+        // setIsOpen(false); // Commented out to keep dialog open
+
+        // Also log to console for easy copying
+        console.log("🔐 ENCRYPTION CREDENTIALS SAVED TO CONSOLE:");
+        console.log("Key:", encryptionData.key);
+        console.log("IV:", encryptionData.iv);
+        console.log("Algorithm:", encryptionData.algorithm);
+      } else {
+        // If not encrypted, close the dialog normally
+        setIsOpen(false);
+        setSelectedFile(null);
+        setFileName("");
+      }
     } finally {
       setIsUploading(false);
     }
   };
 
+  const resetForm = () => {
+    setSelectedFile(null);
+    setFileName("");
+    setUploadedCid("");
+    setUploadedFilename("");
+    setEncryptionDetails(null);
+    setShowEncryptionDetails(false);
+  };
+
   return (
     <Dialog
       isOpen={isOpen}
-      setIsOpen={setIsOpen}
+      setIsOpen={(open) => {
+        if (!open) {
+          resetForm();
+        }
+        setIsOpen(open);
+      }}
       title="Upload File"
       isLoading={isUploading}
       disableCloseOnOverlayClick={isUploading}
@@ -168,6 +232,32 @@ export function FileUploadDialog({
           )}
         </div>
 
+        {/* Encryption Option */}
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="encrypt-file"
+            checked={shouldEncrypt}
+            onChange={(e) => setShouldEncrypt(e.target.checked)}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label
+            htmlFor="encrypt-file"
+            className="text-sm font-medium text-gray-700"
+          >
+            🔐 Encrypt file before upload (AES-256)
+          </label>
+        </div>
+        {shouldEncrypt && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-800">
+              <strong>Security Note:</strong> Your file will be encrypted with
+              AES-256 encryption before uploading to IPFS. The encryption key
+              and IV will be returned to you - keep them safe for decryption!
+            </p>
+          </div>
+        )}
+
         <div className="flex justify-end space-x-2 pt-4">
           <Button
             variant="outline"
@@ -193,6 +283,23 @@ export function FileUploadDialog({
           </Button>
         </div>
       </div>
+
+      {/* Encryption Success Dialog */}
+      <KeyDialog
+        isOpen={showEncryptionDetails}
+        onClose={() => {
+          setShowEncryptionDetails(false);
+          setIsOpen(false);
+          setSelectedFile(null);
+          setFileName("");
+          setUploadedCid("");
+          setUploadedFilename("");
+          setEncryptionDetails(null);
+        }}
+        uploadedCid={uploadedCid}
+        uploadedFilename={uploadedFilename}
+        encryptionDetails={encryptionDetails!}
+      />
     </Dialog>
   );
 }

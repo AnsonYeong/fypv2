@@ -13,17 +13,9 @@ import { FileUploadDialog } from "./file-upload-dialog";
 import { ShareDialog } from "./share-dialog";
 import { PermissionsDialog } from "./permissions-dialog";
 import { VersionHistorySheet } from "./version-history-sheet";
+import { DecryptDialog } from "./decrypt-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Plus,
-  Search,
-  Home,
-  Folder,
-  Users,
-  Settings,
-  User,
-} from "lucide-react";
+import { Plus, Home, Folder, Users, Settings, User, Lock } from "lucide-react";
 
 export function DashboardClient() {
   const [files, setFiles] = useState<AppFile[]>([]);
@@ -39,6 +31,7 @@ export function DashboardClient() {
   const [isShareOpen, setShareOpen] = useState(false);
   const [isPermissionsOpen, setPermissionsOpen] = useState(false);
   const [isVersionsOpen, setVersionsOpen] = useState(false);
+  const [isDecryptOpen, setDecryptOpen] = useState(false);
   const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isProfileInfoOpen, setProfileInfoOpen] = useState(false);
   const [isLogoutOpen, setLogoutOpen] = useState(false);
@@ -518,21 +511,23 @@ export function DashboardClient() {
             {activeSection === "shared" && "Shared With Me"}
           </h1>
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search files..."
-                className="pl-10 w-80 bg-background"
-              />
+            <div className="flex space-x-2">
+              <Button
+                onClick={() => setUploadOpen(true)}
+                className="btn-3d btn-3d-primary"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Upload File
+              </Button>
+              <Button
+                onClick={() => setDecryptOpen(true)}
+                variant="outline"
+                className="btn-3d btn-3d-secondary"
+              >
+                <Lock className="mr-2 h-4 w-4" />
+                Decrypt File
+              </Button>
             </div>
-            <Button
-              onClick={() => setUploadOpen(true)}
-              className="btn-3d btn-3d-primary"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Upload File
-            </Button>
           </div>
         </header>
 
@@ -793,6 +788,8 @@ export function DashboardClient() {
         onFileUploaded={handleAddNewFile}
         userId={walletAddress || "demo-user"}
       />
+
+      <DecryptDialog isOpen={isDecryptOpen} setIsOpen={setDecryptOpen} />
 
       {selectedFile && (
         <>

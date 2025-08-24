@@ -1,21 +1,23 @@
 {
   "name": "smart_contract",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "hardhat test",
-    "test:verbose": "hardhat test --verbose",
-    "compile": "hardhat compile",
-    "deploy:local": "hardhat ignition deploy ignition/modules/Lock.ts --network localhost",
-    "node": "hardhat node",
-    "clean": "hardhat clean"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^0.15.13",
+    "@nomicfoundation/hardhat-ignition-viem": "^0.15.13",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
     "@nomicfoundation/hardhat-toolbox-viem": "^4.1.0",
-    "hardhat": "^2.26.2"
+    "@nomicfoundation/hardhat-verify": "^2.1.1",
+    "@nomicfoundation/hardhat-viem": "^2.1.1",
+    "@types/chai": "^4.3.20",
+    "@types/chai-as-promised": "^7.1.8",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.3.0",
+    "chai": "^4.5.0",
+    "hardhat": "^2.26.3",
+    "hardhat-gas-reporter": "^2.3.0",
+    "solidity-coverage": "^0.8.16",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.0.4",
+    "viem": "^2.34.0"
   }
 }
