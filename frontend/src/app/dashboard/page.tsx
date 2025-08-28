@@ -13,7 +13,7 @@ import { FileUploadDialog } from "./file-upload-dialog";
 import { ShareDialog } from "./share-dialog";
 import { PermissionsDialog } from "./permissions-dialog";
 import { VersionHistorySheet } from "./version-history-sheet";
-import { DecryptDialog } from "./decrypt-dialog";
+import { EnhancedDownloadDialog } from "./enhanced-download-dialog";
 import { Button } from "@/components/ui/button";
 import { Plus, Home, Folder, Users, Settings, User, Lock } from "lucide-react";
 
@@ -96,90 +96,97 @@ export function DashboardClient() {
   }, [walletAddress]);
 
   const handleAction = async (action: string, file: AppFile) => {
-    setSelectedFile(file);
-    if (action === "share") setShareOpen(true);
-    if (action === "permissions") setPermissionsOpen(true);
-    if (action === "versions") setVersionsOpen(true);
-    if (action === "download") {
-      const url =
-        file.gatewayUrl ||
-        (file.cid
-          ? `https://gateway.pinata.cloud/ipfs/${file.cid}`
-          : undefined);
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-      } else {
-        alert("No download URL available for this file.");
+    try {
+      setSelectedFile(file);
+      if (action === "share") setShareOpen(true);
+      if (action === "permissions") setPermissionsOpen(true);
+      if (action === "versions") setVersionsOpen(true);
+      if (action === "download") {
+        // Open enhanced download dialog for secure retrieve+decrypt
+        setDecryptOpen(true);
+        return;
       }
-      return;
-    }
-    if (action === "delete") {
-      // Show confirmation dialog
-      const isConfirmed = confirm(
-        `Are you sure you want to delete "${file.name}"?\n\nThis will:\n• Remove the file from your dashboard\n• Delete the file from IPFS permanently\n• This action cannot be undone`
-      );
+      if (action === "delete") {
+        // Show confirmation dialog
+        const isConfirmed = confirm(
+          `Are you sure you want to delete "${file.name}"?\n\nThis will:\n• Remove the file from your dashboard\n• Delete the file from IPFS permanently\n• This action cannot be undone`
+        );
 
-      if (!isConfirmed) return;
+        if (!isConfirmed) return;
 
-      try {
-        // Show loading state for this specific file
-        setDeletingFile(file.id);
+        try {
+          // Show loading state for this specific file
+          setDeletingFile(file.id);
 
-        // First, delete from IPFS if it has a CID
-        if (file.cid) {
-          const deleteResponse = await fetch("/api/ipfs/delete", {
-            method: "DELETE",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              cid: file.cid,
-              fileName: file.name,
-            }),
-          });
+          // First, delete from IPFS if it has a CID
+          if (file.cid) {
+            const deleteResponse = await fetch("/api/ipfs/delete", {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                cid: file.cid,
+                fileName: file.name,
+              }),
+            });
 
-          if (!deleteResponse.ok) {
-            const errorData = await deleteResponse.json().catch(() => ({}));
-            throw new Error(
-              errorData.message ||
-                `Failed to delete file from IPFS: ${deleteResponse.statusText}`
-            );
+            if (!deleteResponse.ok) {
+              const errorData = await deleteResponse.json().catch(() => ({}));
+              throw new Error(
+                (errorData as any).message ||
+                  `Failed to delete file from IPFS: ${deleteResponse.statusText}`
+              );
+            }
+
+            const deleteResult = await deleteResponse.json();
+            console.log("IPFS deletion result:", deleteResult);
           }
 
-          const deleteResult = await deleteResponse.json();
-          console.log("IPFS deletion result:", deleteResult);
+          // Then remove from local storage and state
+          const updatedFiles = files.filter((f) => f.id !== file.id);
+          setFiles(updatedFiles);
+
+          // Save updated files to storage for current user
+          const currentUserId = walletAddress || "demo-user";
+          saveFilesToStorage(updatedFiles, currentUserId);
+
+          // Show success message
+          alert(
+            `File "${file.name}" has been successfully deleted from both IPFS and your dashboard.`
+          );
+        } catch (error) {
+          console.error("Error deleting file:", error);
+
+          // Show error message
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : typeof error === "string"
+              ? error
+              : JSON.stringify(error);
+          alert(
+            `Failed to delete file: ${errorMessage}\n\nThe file has been removed from your dashboard but may still exist on IPFS.`
+          );
+
+          // Even if IPFS deletion fails, remove from local storage
+          const updatedFiles = files.filter((f) => f.id !== file.id);
+          setFiles(updatedFiles);
+          const currentUserId = walletAddress || "demo-user";
+          saveFilesToStorage(updatedFiles, currentUserId);
+        } finally {
+          setDeletingFile(null);
         }
-
-        // Then remove from local storage and state
-        const updatedFiles = files.filter((f) => f.id !== file.id);
-        setFiles(updatedFiles);
-
-        // Save updated files to storage for current user
-        const currentUserId = walletAddress || "demo-user";
-        saveFilesToStorage(updatedFiles, currentUserId);
-
-        // Show success message
-        alert(
-          `File "${file.name}" has been successfully deleted from both IPFS and your dashboard.`
-        );
-      } catch (error) {
-        console.error("Error deleting file:", error);
-
-        // Show error message
-        const errorMessage =
-          error instanceof Error ? error.message : "An unknown error occurred";
-        alert(
-          `Failed to delete file: ${errorMessage}\n\nThe file has been removed from your dashboard but may still exist on IPFS.`
-        );
-
-        // Even if IPFS deletion fails, remove from local storage
-        const updatedFiles = files.filter((f) => f.id !== file.id);
-        setFiles(updatedFiles);
-        const currentUserId = walletAddress || "demo-user";
-        saveFilesToStorage(updatedFiles, currentUserId);
-      } finally {
-        setDeletingFile(null);
       }
+    } catch (err) {
+      console.error("Action handler error:", err);
+      const readable =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+          ? err
+          : JSON.stringify(err);
+      alert(`Action failed: ${readable}`);
     }
   };
 
@@ -787,9 +794,16 @@ export function DashboardClient() {
         setIsOpen={setUploadOpen}
         onFileUploaded={handleAddNewFile}
         userId={walletAddress || "demo-user"}
+        walletAddress={walletAddress || undefined}
       />
 
-      <DecryptDialog isOpen={isDecryptOpen} setIsOpen={setDecryptOpen} />
+      <EnhancedDownloadDialog
+        isOpen={isDecryptOpen}
+        setIsOpen={setDecryptOpen}
+        userAddress={walletAddress || ""}
+        fileCID={selectedFile?.cid || ""}
+        fileName={selectedFile?.name || ""}
+      />
 
       {selectedFile && (
         <>

@@ -1,5 +1,12 @@
 import "./globals.css";
 
+export const metadata = {
+  title: "Blocksecure",
+  icons: {
+    icon: "/file-shredder-svgrepo-com.svg",
+  },
+};
+
 export default function RootLayout({
   children,
 }: {

@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Upload, X, Loader2 } from "lucide-react";
 import { KeyDialog } from "./key-dialog";
+import { createFileMetadata } from "@/lib/metadata";
 
 interface FileUploadDialogProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   onFileUploaded: (file: AppFile) => void;
   userId?: string;
+  walletAddress?: string; // Add wallet address prop
 }
 
 export function FileUploadDialog({
@@ -20,6 +22,7 @@ export function FileUploadDialog({
   setIsOpen,
   onFileUploaded,
   userId = "demo-user",
+  walletAddress, // Add wallet address parameter
 }: FileUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -33,6 +36,7 @@ export function FileUploadDialog({
   } | null>(null);
   const [uploadedCid, setUploadedCid] = useState<string>("");
   const [uploadedFilename, setUploadedFilename] = useState<string>("");
+  const [metadataCID, setMetadataCID] = useState<string>("");
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -112,6 +116,105 @@ export function FileUploadDialog({
       setUploadedCid(cid);
       setUploadedFilename(fileName);
 
+      // If encrypted, generate metadata.json and upload to IPFS
+      if (encrypted && encryptionData) {
+        try {
+          // Ask user for password for wrapping the encryption key
+          const password =
+            window.prompt(
+              "Enter a password to protect your key (used to wrap the key):"
+            ) || "";
+          if (!password) {
+            console.warn("Metadata generation skipped: no password provided");
+          } else {
+            // Download encrypted file from IPFS to compute hash and size
+            const encResp = await fetch(gatewayUrl);
+            if (!encResp.ok)
+              throw new Error("Failed to fetch encrypted file from IPFS");
+            const encBuf = await encResp.arrayBuffer();
+            const encryptedBlob = new Blob([encBuf], {
+              type: "application/octet-stream",
+            });
+            const encryptedFile = new File(
+              [encryptedBlob],
+              selectedFile.name + ".encrypted",
+              {
+                type: "application/octet-stream",
+              }
+            );
+
+            // Create metadata
+            const metadata = await createFileMetadata(
+              selectedFile,
+              encryptedFile,
+              cid,
+              encryptionData.key,
+              encryptionData.iv,
+              password,
+              walletAddress || "0x0000000000000000000000000000000000000000", // placeholder, replace with connected wallet
+              process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+                "0x0000000000000000000000000000000000000000"
+            );
+
+            // Upload metadata via API
+            const metaRes = await fetch("/api/ipfs/metadata", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(metadata),
+            });
+            if (!metaRes.ok) {
+              const txt = await metaRes.text();
+              throw new Error(`Metadata upload failed: ${txt}`);
+            }
+            const metaJson = await metaRes.json();
+            setMetadataCID(metaJson.metadataCID);
+            console.log("✅ metadataCID:", metaJson.metadataCID);
+
+            // Register on-chain with metadataCID
+            try {
+              const fileHash = metadata.integrity.originalHash;
+              const registerRes = await fetch("/api/contract/upload", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fileHash,
+                  fileName,
+                  fileSize: selectedFile.size,
+                  metadataCID: metaJson.metadataCID,
+                  uploaderAddress: walletAddress || undefined,
+                }),
+              });
+              if (!registerRes.ok) {
+                const txt = await registerRes.text();
+                console.error("Contract register failed:", txt);
+              } else {
+                const rj = await registerRes.json();
+                console.log("📗 Contract upload tx:", rj.txHash);
+                console.log("🔎 On-chain check:", {
+                  fileId: rj.fileId,
+                  storedCID: rj.storedCID,
+                });
+                if (rj.storedCID === metaJson.metadataCID) {
+                  console.log(
+                    "✅ Metadata CID stored on-chain matches IPFS CID:",
+                    rj.storedCID
+                  );
+                } else {
+                  console.warn(
+                    "⚠️ Mismatch between on-chain storedCID and uploaded metadataCID",
+                    { onChain: rj.storedCID, ipfs: metaJson.metadataCID }
+                  );
+                }
+              }
+            } catch (chainErr) {
+              console.error("Contract call error:", chainErr);
+            }
+          }
+        } catch (metaErr) {
+          console.error("Metadata processing error:", metaErr);
+        }
+      }
+
       // Show encryption success message if file was encrypted
       if (encrypted && encryptionData) {
         // Store encryption details for the success dialog
@@ -132,6 +235,9 @@ export function FileUploadDialog({
         console.log("Key:", encryptionData.key);
         console.log("IV:", encryptionData.iv);
         console.log("Algorithm:", encryptionData.algorithm);
+        if (metadataCID) {
+          console.log("Metadata CID:", metadataCID);
+        }
       } else {
         // If not encrypted, close the dialog normally
         setIsOpen(false);
@@ -150,6 +256,7 @@ export function FileUploadDialog({
     setUploadedFilename("");
     setEncryptionDetails(null);
     setShowEncryptionDetails(false);
+    setMetadataCID("");
   };
 
   return (
@@ -295,6 +402,7 @@ export function FileUploadDialog({
           setUploadedCid("");
           setUploadedFilename("");
           setEncryptionDetails(null);
+          setMetadataCID("");
         }}
         uploadedCid={uploadedCid}
         uploadedFilename={uploadedFilename}
