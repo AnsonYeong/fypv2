@@ -212,29 +212,15 @@ export async function verifyFileAccess(
     ])) as bigint;
     if (fileIdBig === BigInt(0)) return false;
 
-    // Check chain-level access
+    // Check chain-level access (authoritative)
     const hasAccess = await contract.read.hasReadAccess([
       fileIdBig,
       userAddress as `0x${string}`,
     ]);
     if (!hasAccess) return false;
 
-    // Then check metadata-level permissions
-    const metadata = await retrieveMetadata(metadataCID);
-
-    if (metadata.access.owner.toLowerCase() === userAddress.toLowerCase()) {
-      return true; // Owner has all permissions
-    }
-
-    if (
-      metadata.access.sharedWith.some(
-        (addr) => addr.toLowerCase() === userAddress.toLowerCase()
-      )
-    ) {
-      return permission === "read"; // Shared users only have read access
-    }
-
-    return false;
+    // If chain access is granted, consider it sufficient
+    return true;
   } catch (error) {
     console.error("Access verification failed:", error);
     return false;

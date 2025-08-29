@@ -125,12 +125,12 @@ export function EnhancedDownloadDialog({
               <label className="block text-sm font-medium mb-2">
                 🔐 Password for Key Unwrapping
               </label>
-              <Input
+              <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password..."
-                className="font-mono text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Your password unwraps the encryption key stored in metadata.
@@ -142,11 +142,11 @@ export function EnhancedDownloadDialog({
                 <label className="block text-sm font-medium mb-2">
                   Optional: File CID (if no selection)
                 </label>
-                <Input
+                <input
                   value={fallbackCid}
                   onChange={(e) => setFallbackCid(e.target.value)}
                   placeholder="Enter encrypted file CID (optional)"
-                  className="font-mono text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   If you opened this dialog from the file list, we already know

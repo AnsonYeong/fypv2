@@ -33,10 +33,12 @@ export async function POST(req: NextRequest) {
       const write = getWriteContract();
       // Store metadataCID as the on-chain hash to keep a direct mapping
       const txHash = await (write as any).write.uploadFileHash([
-        metadataCID,
-        fileName,
-        BigInt(fileSize),
-        metadataCID,
+        metadataCID, // _fileHash
+        fileName, // _fileName
+        BigInt(fileSize), // _fileSize
+        metadataCID, // _metadataCID
+        false, // _isEncrypted (default to false for now)
+        "0x", // _masterKeyHash (empty for non-encrypted files)
       ]);
 
       // Wait for confirmation
@@ -56,13 +58,15 @@ export async function POST(req: NextRequest) {
       if (fileId && fileId > BigInt(0)) {
         fileIdNumber = Number(fileId);
         const fileInfo = (await (read as any).read.getFileInfo([fileId])) as [
-          string,
-          string,
-          bigint,
-          string,
-          bigint,
-          boolean,
-          string
+          string, // fileHash
+          string, // fileName
+          bigint, // fileSize
+          string, // uploader
+          bigint, // timestamp
+          boolean, // isActive
+          string, // metadataCID
+          boolean, // isEncrypted
+          string // masterKeyHash
         ];
         storedCID = fileInfo[6];
 

@@ -1,7 +1,7 @@
 import { viem } from "hardhat";
 
 async function main() {
-  console.log("🚀 Deploying FileRegistryV2 smart contract (viem)...");
+  console.log("🚀 Deploying FileRegistryV2 contract...");
 
   try {
     const publicClient = await viem.getPublicClient();
@@ -12,7 +12,6 @@ async function main() {
     console.log("🔢 Chain ID:", network);
 
     console.log("📦 Deploying contract...");
-    // Fully qualified name per hardhat-viem requirements
     const deployed = await viem.deployContract(
       "contracts/FYP.sol:FileRegistryV2",
       []
@@ -21,10 +20,11 @@ async function main() {
 
     if (!address) {
       console.error("❌ No contract address in receipt");
-      process.exit(1);
+      throw new Error("No contract address in receipt");
     }
 
-    console.log("✅ Deployed FileRegistryV2 at:", address);
+    console.log("✅ FileRegistryV2 deployed to:", address);
+    console.log("📝 Contract address for frontend:", address);
 
     // Interact with the contract using viem helpers
     const contract = await viem.getContractAt(
@@ -35,7 +35,7 @@ async function main() {
     const totalFiles = await contract.read.getTotalFiles();
 
     console.log("👑 Owner:", owner);
-    console.log("📁 Total files:", totalFiles.toString());
+    console.log("📁 Initial total files:", totalFiles.toString());
 
     console.log("\n🎉 Deployment completed successfully!");
     console.log("📋 Contract Details:");

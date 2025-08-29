@@ -40,7 +40,7 @@ const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         />
         <div
           ref={ref}
-          className="relative bg-white rounded-lg shadow-lg max-w-md w-full mx-4 p-6"
+          className="relative bg-white rounded-lg shadow-lg max-w-4xl w-full mx-4 p-6"
           aria-busy={isLoading}
         >
           {title && <h2 className="text-lg font-semibold mb-4">{title}</h2>}

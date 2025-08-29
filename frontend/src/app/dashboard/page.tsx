@@ -16,14 +16,26 @@ import { VersionHistorySheet } from "./version-history-sheet";
 import { EnhancedDownloadDialog } from "./enhanced-download-dialog";
 import { Button } from "@/components/ui/button";
 import { Plus, Home, Folder, Users, Settings, User, Lock } from "lucide-react";
+import {
+  createPublicClient,
+  http,
+  getContract,
+  custom,
+  createWalletClient,
+  parseAbi,
+} from "viem";
+import * as Chains from "viem/chains";
 
 export function DashboardClient() {
   const [files, setFiles] = useState<AppFile[]>([]);
+  const [sharedFiles, setSharedFiles] = useState<AppFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<AppFile | null>(null);
   const [activeSection, setActiveSection] = useState("files");
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingShared, setIsLoadingShared] = useState(false);
+  const [isLoadingSharedCounts, setIsLoadingSharedCounts] = useState(false);
   const [ipfsError, setIpfsError] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
 
@@ -44,6 +56,191 @@ export function DashboardClient() {
     }
   }, []);
 
+  // Function to count shared users for a specific file
+  const getSharedUsersCount = async (fileId: number): Promise<number> => {
+    if (!walletAddress) return 0;
+
+    try {
+      const chainIdHex = await (window as any).ethereum?.request?.({
+        method: "eth_chainId",
+      });
+      const chainId = chainIdHex ? parseInt(chainIdHex, 16) : 31337;
+      const chain =
+        chainId === 31337
+          ? Chains.hardhat
+          : chainId === 1337
+          ? Chains.localhost
+          : Chains.sepolia;
+      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
+
+      const publicClient = createPublicClient({
+        chain,
+        transport: http(rpcUrl),
+      });
+      const walletClient = createWalletClient({
+        chain,
+        transport: custom((window as any).ethereum),
+      });
+      const [account] = await walletClient.getAddresses();
+
+      const contractAddress = process.env
+        .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+      const abi = parseAbi([
+        "function getAccessInfo(uint256, address) view returns (bool canRead, bool canWrite, uint256 grantedAt, uint256 expiresAt)",
+      ]);
+      const contract = getContract({
+        address: contractAddress,
+        abi,
+        client: { public: publicClient, wallet: walletClient as any },
+      }) as any;
+
+      // Check a list of common addresses to see who has access
+      const commonAddresses = [
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+        "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+        "0x976EA74026E726554dB657fA54763abd0C3a0aa9",
+        "0x14dC79964da2C08b23698B3D3cc7Ca32193d9955",
+        "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f",
+        "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720",
+        "0xBcd4042DE499D14e55001CcbB24a551F3b954096",
+      ];
+
+      let sharedCount = 0;
+      for (const addr of commonAddresses) {
+        try {
+          const accessInfo = await contract.read.getAccessInfo([
+            BigInt(fileId),
+            addr as `0x${string}`,
+          ]);
+          if (accessInfo[0] && accessInfo[0] !== account) {
+            // canRead and not the owner
+            sharedCount++;
+          }
+        } catch (error) {
+          // Address might not have access, continue
+          continue;
+        }
+      }
+
+      return sharedCount;
+    } catch (error) {
+      console.error("Error counting shared users:", error);
+      return 0;
+    }
+  };
+
+  // Function to load files from blockchain with shared counts
+  const loadFilesFromBlockchain = async (): Promise<AppFile[]> => {
+    if (!walletAddress) return [];
+
+    try {
+      const chainIdHex = await (window as any).ethereum?.request?.({
+        method: "eth_chainId",
+      });
+      const chainId = chainIdHex ? parseInt(chainIdHex, 16) : 31337;
+      const chain =
+        chainId === 31337
+          ? Chains.hardhat
+          : chainId === 1337
+          ? Chains.localhost
+          : Chains.sepolia;
+      const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
+
+      const publicClient = createPublicClient({
+        chain,
+        transport: http(rpcUrl),
+      });
+      const walletClient = createWalletClient({
+        chain,
+        transport: custom((window as any).ethereum),
+      });
+      const [account] = await walletClient.getAddresses();
+
+      const contractAddress = process.env
+        .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+      const abi = parseAbi([
+        "function getUserFiles(address) view returns (uint256[])",
+        "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string)",
+      ]);
+      const contract = getContract({
+        address: contractAddress,
+        abi,
+        client: { public: publicClient, wallet: walletClient as any },
+      }) as any;
+
+      const userFileIds = await contract.read.getUserFiles([account]);
+      const results: AppFile[] = [];
+
+      for (const fileId of userFileIds) {
+        try {
+          const info = (await contract.read.getFileInfo([fileId])) as [
+            string,
+            string,
+            bigint,
+            string,
+            bigint,
+            boolean,
+            string,
+            boolean,
+            string
+          ];
+
+          const metadataCID = info[6];
+          const name = info[1];
+          const size = Number(info[2]);
+          const owner = info[3];
+          const timestamp = Number(info[4]);
+          const isActive = info[5];
+          const isEncrypted = info[7];
+          const masterKeyHash = info[8];
+
+          // Get shared count for this file
+          const sharedCount = await getSharedUsersCount(Number(fileId));
+
+          // Fetch metadata from IPFS to get additional info
+          let gatewayUrl: string | undefined = undefined;
+          let fileType: string | undefined = undefined;
+          try {
+            const res = await fetch(
+              `/api/ipfs/retrieve?cid=${encodeURIComponent(metadataCID)}`
+            );
+            if (res.ok) {
+              const meta = await res.json();
+              gatewayUrl =
+                meta?.gatewayUrl || meta?.ipfsGatewayUrl || undefined;
+              fileType = meta?.fileInfo?.mimeType || undefined;
+            }
+          } catch {}
+
+          results.push({
+            id: Number(fileId).toString(),
+            name: name,
+            size: size,
+            type: fileType || "unknown",
+            lastModified: new Date(timestamp * 1000),
+            owner: owner,
+            sharedWith: Array(sharedCount).fill("shared-user"), // Placeholder for shared count display
+            permissions: "admin",
+            versions: [],
+            cid: metadataCID,
+            gatewayUrl: gatewayUrl,
+            encrypted: isEncrypted,
+          });
+        } catch (error) {
+          console.error(`Error processing file ID ${fileId}:`, error);
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error("Error loading files from blockchain:", error);
+      return [];
+    }
+  };
+
   // Initialize files from storage and IPFS when wallet address changes
   useEffect(() => {
     const initializeFiles = async () => {
@@ -52,18 +249,24 @@ export function DashboardClient() {
         setIpfsError(null);
 
         if (walletAddress) {
-          // User is logged in, try to retrieve their files from IPFS and storage
-          const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
-          if (userFiles.length > 0) {
-            setFiles(userFiles);
+          // User is logged in, try to retrieve their files from blockchain first
+          const blockchainFiles = await loadFilesFromBlockchain();
+          if (blockchainFiles.length > 0) {
+            setFiles(blockchainFiles);
           } else {
-            // If no user files, check if there are any stored files
-            const storedFiles = getFilesFromStorage(walletAddress);
-            if (storedFiles.length > 0) {
-              setFiles(storedFiles);
+            // Fallback to IPFS and storage if no blockchain files
+            const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
+            if (userFiles.length > 0) {
+              setFiles(userFiles);
             } else {
-              // No files found, start with empty list
-              setFiles([]);
+              // If no user files, check if there are any stored files
+              const storedFiles = getFilesFromStorage(walletAddress);
+              if (storedFiles.length > 0) {
+                setFiles(storedFiles);
+              } else {
+                // No files found, start with empty list
+                setFiles([]);
+              }
             }
           }
         } else {
@@ -94,6 +297,188 @@ export function DashboardClient() {
       initializeFiles();
     }
   }, [walletAddress]);
+
+  // Load files shared with the connected wallet
+  useEffect(() => {
+    const loadShared = async () => {
+      if (!walletAddress) {
+        setSharedFiles([]);
+        return;
+      }
+      try {
+        setIsLoadingShared(true);
+        // Detect chain from MetaMask
+        const chainIdHex = await (window as any).ethereum?.request?.({
+          method: "eth_chainId",
+        });
+        const chainId = chainIdHex ? parseInt(chainIdHex, 16) : 31337;
+        const chain =
+          chainId === 31337
+            ? Chains.hardhat
+            : chainId === 1337
+            ? Chains.localhost
+            : Chains.sepolia;
+        const rpcUrl =
+          process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
+
+        const publicClient = createPublicClient({
+          chain,
+          transport: http(rpcUrl),
+        });
+        const walletClient = createWalletClient({
+          chain,
+          transport: custom((window as any).ethereum),
+        });
+        const [account] = await walletClient.getAddresses();
+
+        const contractAddress = process.env
+          .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+        const abi = parseAbi([
+          "function getTotalFiles() view returns (uint256)",
+          "function hasReadAccess(uint256, address) view returns (bool)",
+          "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string)",
+        ]);
+        const contract = getContract({
+          address: contractAddress,
+          abi,
+          client: { public: publicClient, wallet: walletClient as any },
+        }) as any;
+
+        const total = Number(await contract.read.getTotalFiles());
+        const results: AppFile[] = [];
+        for (let i = 1; i <= total; i++) {
+          try {
+            const canRead = await contract.read.hasReadAccess([
+              BigInt(i),
+              account,
+            ]);
+            if (!canRead) continue;
+            const info = (await contract.read.getFileInfo([BigInt(i)])) as [
+              string,
+              string,
+              bigint,
+              string,
+              bigint,
+              boolean,
+              string,
+              boolean,
+              string
+            ];
+            const metadataCID = info[6];
+            const name = info[1];
+            const size = Number(info[2]);
+            const encrypted = info[7];
+            // Fetch metadata from our API to get gateway URL if needed
+            let gatewayUrl: string | undefined = undefined;
+            try {
+              const res = await fetch(
+                `/api/ipfs/retrieve?cid=${encodeURIComponent(metadataCID)}`
+              );
+              if (res.ok) {
+                const meta = await res.json();
+                gatewayUrl =
+                  meta?.gatewayUrl || meta?.ipfsGatewayUrl || undefined;
+              }
+            } catch {}
+            // Get shared count for this file (how many people the owner has shared it with)
+            const sharedCount = await getSharedUsersCount(i);
+
+            results.push({
+              id: String(i),
+              name,
+              size,
+              type: "unknown",
+              lastModified: new Date(Number(info[4]) * 1000),
+              owner: info[3],
+              sharedWith: Array(sharedCount).fill("shared-user"), // Show actual shared count
+              permissions: "read",
+              versions: [],
+              cid: metadataCID,
+              gatewayUrl,
+              encrypted,
+            } as AppFile);
+          } catch {}
+        }
+        setSharedFiles(results);
+      } catch (err) {
+        console.error("Failed to load shared files:", err);
+        setSharedFiles([]);
+      } finally {
+        setIsLoadingShared(false);
+      }
+    };
+    loadShared();
+  }, [walletAddress]);
+
+  // Function to refresh shared counts for existing files
+  const refreshSharedCounts = async () => {
+    if (!walletAddress || files.length === 0) return;
+
+    try {
+      setIsLoadingSharedCounts(true);
+      const updatedFiles = await Promise.all(
+        files.map(async (file) => {
+          // Try to get fileId from the file's cid by looking it up on-chain
+          try {
+            const chainIdHex = await (window as any).ethereum?.request?.({
+              method: "eth_chainId",
+            });
+            const chainId = chainIdHex ? parseInt(chainIdHex, 16) : 31337;
+            const chain =
+              chainId === 31337
+                ? Chains.hardhat
+                : chainId === 1337
+                ? Chains.localhost
+                : Chains.sepolia;
+            const rpcUrl =
+              process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
+
+            const publicClient = createPublicClient({
+              chain,
+              transport: http(rpcUrl),
+            });
+            const walletClient = createWalletClient({
+              chain,
+              transport: custom((window as any).ethereum),
+            });
+            const [account] = await walletClient.getAddresses();
+
+            const contractAddress = process.env
+              .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+            const abi = parseAbi([
+              "function hashToFileId(string) view returns (uint256)",
+            ]);
+            const contract = getContract({
+              address: contractAddress,
+              abi,
+              client: { public: publicClient, wallet: walletClient as any },
+            }) as any;
+
+            const fileId = await contract.read.hashToFileId([file.cid]);
+            if (fileId && fileId !== BigInt(0)) {
+              const sharedCount = await getSharedUsersCount(Number(fileId));
+              return {
+                ...file,
+                sharedWith: Array(sharedCount).fill("shared-user"),
+              };
+            }
+          } catch (error) {
+            console.error(
+              `Error refreshing shared count for file ${file.name}:`,
+              error
+            );
+          }
+          return file;
+        })
+      );
+
+      setFiles(updatedFiles);
+    } catch (error) {
+      console.error("Error refreshing shared counts:", error);
+    } finally {
+      setIsLoadingSharedCounts(false);
+    }
+  };
 
   const handleAction = async (action: string, file: AppFile) => {
     try {
@@ -224,8 +609,14 @@ export function DashboardClient() {
       setIpfsError(null);
 
       if (walletAddress) {
-        const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
-        setFiles(userFiles);
+        // Refresh files from blockchain first, then fallback to IPFS
+        const blockchainFiles = await loadFilesFromBlockchain();
+        if (blockchainFiles.length > 0) {
+          setFiles(blockchainFiles);
+        } else {
+          const userFiles = await retrieveUserFilesFromIPFS(walletAddress);
+          setFiles(userFiles);
+        }
       } else {
         const storedFiles = getFilesFromStorage("demo-user");
         setFiles(storedFiles);
@@ -257,9 +648,14 @@ export function DashboardClient() {
       setIpfsError(null);
 
       if (newWalletAddress) {
-        // New user logged in, retrieve their files
-        const userFiles = await retrieveUserFilesFromIPFS(newWalletAddress);
-        setFiles(userFiles);
+        // New user logged in, retrieve their files from blockchain first
+        const blockchainFiles = await loadFilesFromBlockchain();
+        if (blockchainFiles.length > 0) {
+          setFiles(blockchainFiles);
+        } else {
+          const userFiles = await retrieveUserFilesFromIPFS(newWalletAddress);
+          setFiles(userFiles);
+        }
       } else {
         // No wallet, show demo files
         const storedFiles = getFilesFromStorage("demo-user");
@@ -558,14 +954,19 @@ export function DashboardClient() {
                       </h2>
                       <Button
                         variant="outline"
-                        onClick={refreshFilesFromIPFS}
-                        disabled={isRefreshing}
+                        onClick={async () => {
+                          await refreshFilesFromIPFS();
+                          await refreshSharedCounts();
+                        }}
+                        disabled={isRefreshing || isLoadingSharedCounts}
                         className="btn-3d btn-3d-secondary"
                       >
-                        {isRefreshing ? (
+                        {isRefreshing || isLoadingSharedCounts ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                            Refreshing...
+                            {isRefreshing
+                              ? "Refreshing..."
+                              : "Updating shares..."}
                           </>
                         ) : (
                           "Refresh Files"
@@ -776,11 +1177,35 @@ export function DashboardClient() {
                   </div>
                 )}
                 {activeSection === "shared" && (
-                  <div className="animate-in slide-in-from-bottom-4 duration-500 text-center text-muted-foreground">
-                    <h2 className="text-xl font-bold mb-2">Shared With Me</h2>
-                    <p className="font-bold">
-                      Files shared with you will appear here.
-                    </p>
+                  <div className="animate-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        Shared With Me
+                      </h2>
+                      <Button
+                        variant="outline"
+                        onClick={() => setWalletAddress((prev) => prev)}
+                        disabled={isLoadingShared}
+                        className="btn-3d btn-3d-secondary"
+                      >
+                        {isLoadingShared ? "Refreshing..." : "Refresh"}
+                      </Button>
+                    </div>
+                    {isLoadingShared ? (
+                      <div className="flex items-center justify-center h-40 text-muted-foreground">
+                        Loading shared files...
+                      </div>
+                    ) : sharedFiles.length > 0 ? (
+                      <FileList
+                        files={sharedFiles}
+                        onAction={handleAction}
+                        deletingFile={deletingFile}
+                      />
+                    ) : (
+                      <div className="text-center text-muted-foreground">
+                        Files shared with you will appear here.
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -801,7 +1226,8 @@ export function DashboardClient() {
         isOpen={isDecryptOpen}
         setIsOpen={setDecryptOpen}
         userAddress={walletAddress || ""}
-        fileCID={selectedFile?.cid || ""}
+        metadataCID={activeSection === "shared" ? selectedFile?.cid : ""}
+        fileCID={activeSection === "files" ? selectedFile?.cid || "" : ""}
         fileName={selectedFile?.name || ""}
       />
 
@@ -809,7 +1235,13 @@ export function DashboardClient() {
         <>
           <ShareDialog
             isOpen={isShareOpen}
-            setIsOpen={setShareOpen}
+            setIsOpen={(open) => {
+              setShareOpen(open);
+              if (!open) {
+                // Dialog closed, refresh shared counts
+                refreshSharedCounts();
+              }
+            }}
             file={selectedFile}
           />
           <PermissionsDialog

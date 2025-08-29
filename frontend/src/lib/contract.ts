@@ -9,13 +9,15 @@ import { localhost, sepolia } from "viem/chains";
 
 // Type definitions for contract return values
 export type GetFileInfoResult = [
-  string,
-  string,
-  bigint,
-  string,
-  bigint,
-  boolean,
-  string
+  string, // fileHash
+  string, // fileName
+  bigint, // fileSize
+  string, // uploader
+  bigint, // timestamp
+  boolean, // isActive
+  string, // metadataCID
+  boolean, // isEncrypted
+  string // masterKeyHash
 ];
 export type GetUserFilesResult = bigint[];
 
@@ -194,6 +196,8 @@ const abi = [
       { internalType: "string", name: "_fileName", type: "string" },
       { internalType: "uint256", name: "_fileSize", type: "uint256" },
       { internalType: "string", name: "_metadataCID", type: "string" },
+      { internalType: "bool", name: "_isEncrypted", type: "bool" },
+      { internalType: "string", name: "_masterKeyHash", type: "string" },
     ],
     name: "uploadFileHash",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
@@ -230,6 +234,8 @@ const abi = [
       { internalType: "uint256", name: "timestamp", type: "uint256" },
       { internalType: "bool", name: "isActive", type: "bool" },
       { internalType: "string", name: "metadataCID", type: "string" },
+      { internalType: "bool", name: "isEncrypted", type: "bool" },
+      { internalType: "string", name: "masterKeyHash", type: "string" },
     ],
     stateMutability: "view",
     type: "function",
@@ -265,6 +271,7 @@ const abi = [
     inputs: [
       { internalType: "uint256", name: "_fileId", type: "uint256" },
       { internalType: "address", name: "_user", type: "address" },
+      { internalType: "uint256", name: "_expiresAt", type: "uint256" },
     ],
     name: "grantRead",
     outputs: [],
@@ -275,6 +282,7 @@ const abi = [
     inputs: [
       { internalType: "uint256", name: "_fileId", type: "uint256" },
       { internalType: "address", name: "_user", type: "address" },
+      { internalType: "uint256", name: "_expiresAt", type: "uint256" },
     ],
     name: "grantWrite",
     outputs: [],
@@ -317,6 +325,41 @@ const abi = [
     name: "nextFileId",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "_fileId", type: "uint256" },
+      { internalType: "address", name: "_user", type: "address" },
+    ],
+    name: "getAccessInfo",
+    outputs: [
+      { internalType: "bool", name: "hasRead", type: "bool" },
+      { internalType: "bool", name: "hasWrite", type: "bool" },
+      { internalType: "uint256", name: "grantedAt", type: "uint256" },
+      { internalType: "uint256", name: "expiresAt", type: "uint256" },
+      { internalType: "bool", name: "expired", type: "bool" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "_fileId", type: "uint256" }],
+    name: "getUsersWithAccess",
+    outputs: [{ internalType: "address[]", name: "", type: "address[]" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "_fileId", type: "uint256" },
+      { internalType: "address", name: "_user", type: "address" },
+      { internalType: "string", name: "_wrappedKey", type: "string" },
+      { internalType: "uint256", name: "_expiresAt", type: "uint256" },
+    ],
+    name: "shareEncryptedFile",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function",
   },
 ] as const;
