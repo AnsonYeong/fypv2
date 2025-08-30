@@ -91,7 +91,6 @@ contract FileRegistryV2 {
 
     modifier hasValidAccess(uint256 _fileId, address _user) {
         require(hasReadAccess(_fileId, _user), "No read access");
-        require(!isAccessExpired(_fileId, _user), "Access has expired");
         _;
     }
 

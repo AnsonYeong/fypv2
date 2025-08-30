@@ -71,6 +71,35 @@ export async function GET(request: NextRequest) {
       filename.includes(".encrypted") ||
       contentType === "application/octet-stream";
 
+    // If this is a JSON file (likely metadata), download and parse it
+    if (contentType && contentType.includes("json")) {
+      console.log("📋 Detected JSON file, downloading and parsing content...");
+
+      // Download the actual JSON content
+      const contentResponse = await fetch(
+        `https://gateway.pinata.cloud/ipfs/${cid}`,
+        {
+          method: "GET",
+          headers: {
+            "User-Agent": "BlockShare/1.0",
+          },
+        }
+      );
+
+      if (!contentResponse.ok) {
+        throw new Error(
+          `Failed to download JSON content: ${contentResponse.statusText}`
+        );
+      }
+
+      const jsonContent = await contentResponse.json();
+      console.log("✅ JSON content parsed successfully");
+
+      // Return the parsed JSON content instead of just metadata
+      return NextResponse.json(jsonContent);
+    }
+
+    // For non-JSON files, return the metadata structure
     const fileData: IPFSFileResponse = {
       cid,
       gatewayUrl: `https://gateway.pinata.cloud/ipfs/${cid}`,
