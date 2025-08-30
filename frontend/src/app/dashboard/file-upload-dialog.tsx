@@ -75,23 +75,16 @@ export function FileUploadDialog({
         id: Date.now().toString(),
         name: fileName,
         size: selectedFile.size,
-        type: selectedFile.name.split(".").pop() || "unknown",
+        type: selectedFile.type,
         lastModified: new Date(),
-        owner: "Current User",
+        owner: walletAddress || "0x0000000000000000000000000000000000000000",
         sharedWith: [],
         permissions: "admin",
-        versions: [
-          {
-            id: "v1",
-            version: 1,
-            timestamp: new Date(),
-            size: selectedFile.size,
-            changes: "Initial upload (pinned to IPFS)",
-          },
-        ],
-        cid,
-        gatewayUrl,
-        encrypted: encrypted || false,
+        versions: [],
+        cid: cid, // This is the file CID
+        metadataCID: "", // Will be set after metadata upload
+        gatewayUrl: gatewayUrl,
+        encrypted: encrypted,
         encryptionData:
           encrypted && encryptionData
             ? {
@@ -166,6 +159,9 @@ export function FileUploadDialog({
             const metaJson = await metaRes.json();
             setMetadataCID(metaJson.metadataCID);
             console.log("✅ metadataCID:", metaJson.metadataCID);
+
+            // Update the file object with the metadata CID
+            newFile.metadataCID = metaJson.metadataCID;
 
             // Register on-chain with metadataCID via user's wallet (MetaMask)
             try {

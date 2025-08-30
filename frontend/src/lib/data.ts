@@ -9,6 +9,7 @@ export interface AppFile {
   permissions: "read" | "write" | "admin";
   versions: FileVersion[];
   cid?: string;
+  metadataCID?: string; // IPFS CID for metadata.json
   gatewayUrl?: string;
   encrypted?: boolean;
   encryptionData?: {

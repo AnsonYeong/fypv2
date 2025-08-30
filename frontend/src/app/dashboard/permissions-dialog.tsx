@@ -110,6 +110,17 @@ export function PermissionsDialog({
 
   const loadUserAccess = async () => {
     setIsLoading(true);
+
+    // Debug: Log the file object being processed
+    console.log("🔍 DEBUG: File object received:", file);
+    console.log("🔍 DEBUG: File properties:", {
+      id: file.id,
+      name: file.name,
+      cid: file.cid,
+      owner: file.owner,
+      encrypted: file.encrypted,
+    });
+
     try {
       const chainIdHex = await (window as any).ethereum?.request?.({
         method: "eth_chainId",
@@ -148,20 +159,26 @@ export function PermissionsDialog({
       }) as any;
 
       console.log("🔍 Looking for file:", file.name);
-      console.log("🔍 File CID:", file.cid);
+      console.log("🔍 File CID (this is the actual file):", file.cid);
+      console.log(
+        "🔍 Metadata CID (this is what blockchain stores):",
+        file.metadataCID
+      );
       console.log("🔍 Contract address:", contractAddress);
 
-      // Try to get file ID from CID - the blockchain might store metadata CID instead of file CID
-      let fileId = await contract.read.hashToFileId([file.cid]);
+      // The blockchain stores metadata CID, not file CID
+      // Use metadataCID if available, otherwise fall back to cid
+      const lookupCID = file.metadataCID || file.cid;
+      let fileId = await contract.read.hashToFileId([lookupCID]);
       console.log(
-        "🔍 File ID from CID:",
+        "🔍 File ID from lookup CID:",
         fileId ? fileId.toString() : "Not found"
       );
 
       // If not found, try to find the file by searching through user's files
       if (!fileId || fileId === BigInt(0)) {
         console.log(
-          "File not found with file.cid, searching through user's files..."
+          "File not found with lookup CID, searching through user's files..."
         );
 
         try {
@@ -209,8 +226,13 @@ export function PermissionsDialog({
       console.log("✅ Found file on blockchain with ID:", fileId.toString());
 
       // Get all users who have access to this file
+      console.log(
+        "🔍 Calling getUsersWithAccess for file ID:",
+        fileId.toString()
+      );
       const usersWithAccess = await contract.read.getUsersWithAccess([fileId]);
       console.log("👥 Users with access:", usersWithAccess);
+      console.log("👥 Users with access length:", usersWithAccess.length);
 
       const accessList: UserAccess[] = [];
       console.log(
@@ -223,7 +245,7 @@ export function PermissionsDialog({
         try {
           console.log("🔍 Checking access for address:", addr);
           const accessInfo = await contract.read.getAccessInfo([fileId, addr]);
-          console.log("🔍 Access info:", accessInfo);
+          console.log("🔍 Access info for", addr, ":", accessInfo);
 
           if (accessInfo[0] || accessInfo[1]) {
             // has read or write access
@@ -349,6 +371,8 @@ export function PermissionsDialog({
   ) => {
     try {
       setIsLoading(true);
+      console.log(`🚀 Starting ${action} action for user:`, userAddress);
+
       const chainIdHex = await (window as any).ethereum?.request?.({
         method: "eth_chainId",
       });
@@ -361,6 +385,8 @@ export function PermissionsDialog({
           : Chains.sepolia;
       const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "http://127.0.0.1:8545";
 
+      console.log(`🔗 Chain ID: ${chainId}, RPC: ${rpcUrl}`);
+
       const publicClient = createPublicClient({
         chain,
         transport: http(rpcUrl),
@@ -369,7 +395,9 @@ export function PermissionsDialog({
         chain,
         transport: custom((window as any).ethereum),
       });
+
       const [account] = await walletClient.getAddresses();
+      console.log(`👤 Current account:`, account);
 
       const contractAddress = process.env
         .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
@@ -385,41 +413,78 @@ export function PermissionsDialog({
         client: { public: publicClient, wallet: walletClient as any },
       }) as any;
 
-      const fileId = await contract.read.hashToFileId([file.cid]);
-      if (!fileId || fileId === BigInt(0)) return;
+      console.log(`📁 Looking for file: ${file.name} with CID: ${file.cid}`);
+      console.log(`📁 Note: This CID is the file CID, not the metadata CID`);
+      console.log(`📁 Metadata CID: ${file.metadataCID}`);
+
+      // Use metadataCID if available, otherwise fall back to cid
+      const lookupCID = file.metadataCID || file.cid;
+      const fileId = await contract.read.hashToFileId([lookupCID]);
+      console.log(
+        `🆔 File ID from lookup CID:`,
+        fileId ? fileId.toString() : "Not found"
+      );
+
+      if (!fileId || fileId === BigInt(0)) {
+        console.error("❌ File not found on blockchain");
+        alert(
+          "File not found on blockchain. Please try uploading the file first."
+        );
+        return;
+      }
 
       const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // 30 days
+      console.log(
+        `⏰ Setting expiration to:`,
+        new Date(expiresAt * 1000).toISOString()
+      );
 
       try {
+        console.log(
+          `📝 Executing contract call: ${action} for file ${fileId} and user ${userAddress}`
+        );
+
         if (action === "grant-read") {
-          await contract.write.grantRead(
+          console.log(`📖 Granting READ access...`);
+          const txHash = await contract.write.grantRead(
             [fileId, userAddress as `0x${string}`, BigInt(expiresAt)],
             { account }
           );
+          console.log(`✅ READ access granted! Transaction hash:`, txHash);
         } else if (action === "grant-write") {
-          await contract.write.grantWrite(
+          console.log(`✏️ Granting WRITE access...`);
+          const txHash = await contract.write.grantWrite(
             [fileId, userAddress as `0x${string}`, BigInt(expiresAt)],
             { account }
           );
+          console.log(`✅ WRITE access granted! Transaction hash:`, txHash);
         } else if (action === "revoke") {
-          await contract.write.revokeAccess(
+          console.log(`🚫 Revoking access...`);
+          const txHash = await contract.write.revokeAccess(
             [fileId, userAddress as `0x${string}`],
             { account }
           );
+          console.log(`✅ Access revoked! Transaction hash:`, txHash);
         }
 
+        console.log(`🔄 Refreshing user access list...`);
         // Refresh user access list
         await loadUserAccess();
         alert(
           `Successfully ${action.replace("-", "ed ")} access for ${userAddress}`
         );
       } catch (error) {
-        console.error(`Error performing ${action} on ${userAddress}:`, error);
-        alert(`Error performing ${action}. Please try again.`);
+        console.error(
+          `❌ Error performing ${action} on ${userAddress}:`,
+          error
+        );
+        alert(
+          `Error performing ${action}. Please check the console for details.`
+        );
       }
     } catch (error) {
-      console.error("Error performing individual action:", error);
-      alert("Error performing action. Please try again.");
+      console.error("❌ Error performing individual action:", error);
+      alert("Error performing action. Please check the console for details.");
     } finally {
       setIsLoading(false);
     }

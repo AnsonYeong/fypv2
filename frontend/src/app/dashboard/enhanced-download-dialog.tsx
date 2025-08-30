@@ -125,6 +125,7 @@ export function EnhancedDownloadDialog({
               <label className="block text-sm font-medium mb-2">
                 🔐 Password for Key Unwrapping
               </label>
+
               <input
                 type="password"
                 value={password}

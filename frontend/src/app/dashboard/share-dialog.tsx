@@ -357,7 +357,9 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
   };
 
   const generateShareLink = () => {
-    const link = `${window.location.origin}/share/${file.id}`;
+    // Use metadataCID if available, otherwise fall back to file.id
+    const shareId = file.metadataCID || file.cid;
+    const link = `${window.location.origin}/share/${shareId}`;
     navigator.clipboard.writeText(link);
     alert("Share link copied to clipboard!");
   };
@@ -522,9 +524,11 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
           </h3>
           <div className="flex space-x-2">
             <input
-              value={`${window.location.origin}/share/${file.id}`}
+              value={`${window.location.origin}/share/${
+                file.metadataCID || file.cid
+              }`}
               readOnly
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-gray-50"
             />
             <Button variant="outline" onClick={generateShareLink}>
               <Copy className="h-4 w-4 mr-2" />

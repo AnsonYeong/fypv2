@@ -411,3 +411,79 @@ export function getWriteContract() {
   }
   return getContract({ address, abi, client: { public: pub, wallet: wal } });
 }
+
+// Function to resolve file ID from AppFile object
+export async function resolveFileId(file: any, account: `0x${string}`) {
+  try {
+    const publicClient = getPublic();
+    const contract = getContract({
+      address,
+      abi,
+      client: { public: publicClient },
+    });
+
+    // If file already has a fileId, use it
+    if (file.fileId) {
+      return { fileId: file.fileId, foundBy: "existing" };
+    }
+
+    // Try to find file by CID (metadataCID)
+    if (file.metadataCID) {
+      // This would require a mapping function in the contract
+      // For now, we'll need to implement a different approach
+      console.log("Searching by metadataCID:", file.metadataCID);
+    }
+
+    // Try to find file by name and owner
+    if (file.name && account) {
+      // This would require iterating through user files
+      // For now, we'll need to implement a different approach
+      console.log("Searching by name and owner:", file.name, account);
+    }
+
+    // For now, return a placeholder - this needs proper implementation
+    // based on your contract's actual structure
+    throw new Error(
+      "File ID resolution not yet implemented. Please ensure file has fileId property."
+    );
+  } catch (error) {
+    console.error("Error resolving file ID:", error);
+    throw error;
+  }
+}
+
+// Function to create a write contract instance
+export async function createWriteContract() {
+  try {
+    if (!(window as any).ethereum) {
+      throw new Error("MetaMask not found");
+    }
+
+    const { createWalletClient, custom } = await import("viem");
+    const { hardhat } = await import("viem/chains");
+
+    const walletClient = createWalletClient({
+      chain: hardhat,
+      transport: custom((window as any).ethereum),
+    });
+
+    const [account] = await walletClient.getAddresses();
+    if (!account) {
+      throw new Error("No account connected");
+    }
+
+    const contract = getContract({
+      address,
+      abi,
+      client: {
+        public: getPublic(),
+        wallet: walletClient,
+      },
+    });
+
+    return { contract, account, walletClient };
+  } catch (error) {
+    console.error("Error creating write contract:", error);
+    throw error;
+  }
+}

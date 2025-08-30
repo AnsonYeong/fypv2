@@ -36,29 +36,80 @@ export default function ShareAccessPage() {
   const [decryptionPassword, setDecryptionPassword] = useState("");
 
   useEffect(() => {
-    // In a real implementation, you'd fetch the file details from IPFS/blockchain
-    // For now, we'll simulate a shared file
-    setTimeout(() => {
-      setFile({
-        id: fileId,
-        name: "Shared Document.pdf",
-        size: 1024000,
-        type: "application/pdf",
-        cid: "bafybeihvj6abpebmpsehdky6focwqaa6kcdbs4j7hcxctfyiowkuus2i7e",
-        gatewayUrl:
-          "https://gateway.pinata.cloud/ipfs/bafybeihvj6abpebmpsehdky6focwqaa6kcdbs4j7hcxctfyiowkuus2i7e",
-        encrypted: true,
-        owner: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        sharedAt: Math.floor(Date.now() / 1000) - 86400, // 1 day ago
-        expiresAt: Math.floor(Date.now() / 1000) + 604800, // 7 days from now
-        permissions: {
-          read: true,
-          write: false,
-        },
-      });
-      setIsLoading(false);
-    }, 1000);
+    // Load file details from blockchain using the metadata CID from URL
+    const loadFileDetails = async () => {
+      try {
+        setIsLoading(true);
+
+        // The fileId from URL is actually the metadata CID
+        const metadataCID = fileId;
+        console.log("🔍 Loading file details for metadata CID:", metadataCID);
+
+        // Set basic file info - real details will be loaded when access is verified
+        setFile({
+          id: metadataCID, // This is actually the metadata CID
+          name: "Loading...", // Will be updated when we fetch from IPFS
+          size: 0,
+          type: "unknown",
+          cid: metadataCID,
+          gatewayUrl: "",
+          encrypted: true,
+          owner: "",
+          sharedAt: 0,
+          expiresAt: 0,
+          permissions: {
+            read: false,
+            write: false,
+          },
+        });
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error loading file details:", error);
+        setIsLoading(false);
+      }
+    };
+
+    if (fileId) {
+      loadFileDetails();
+    }
   }, [fileId]);
+
+  const fetchFileMetadata = async (metadataCID: string) => {
+    try {
+      console.log("🔍 Fetching file metadata from IPFS:", metadataCID);
+
+      // Fetch metadata from IPFS via our API
+      const response = await fetch(
+        `/api/ipfs/retrieve?cid=${encodeURIComponent(metadataCID)}`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch metadata: ${response.statusText}`);
+      }
+
+      const metadata = await response.json();
+      console.log("✅ File metadata loaded:", metadata);
+
+      // Update file with real metadata
+      setFile((prevFile) =>
+        prevFile
+          ? {
+              ...prevFile,
+              name: metadata.fileInfo?.originalName || "Unknown File",
+              size: metadata.fileInfo?.originalSize || 0,
+              type: metadata.fileInfo?.mimeType || "unknown",
+              gatewayUrl: metadata.ipfs?.gatewayUrl || "",
+              encrypted: metadata.encryption?.algorithm === "AES-GCM-256",
+              owner: metadata.blockchain?.owner || "",
+              sharedAt: metadata.blockchain?.timestamp || 0,
+              expiresAt: 0, // Will be set from blockchain access info
+            }
+          : null
+      );
+    } catch (error) {
+      console.error("Error fetching file metadata:", error);
+    }
+  };
 
   const connectWallet = async () => {
     if (!(window as any).ethereum) {
@@ -109,6 +160,7 @@ export default function ShareAccessPage() {
         .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 
       const abi = parseAbi([
+        "function hashToFileId(string) view returns (uint256)",
         "function hasReadAccess(uint256, address) view returns (bool)",
         "function getWrappedKey(uint256) view returns (string)",
         "function getAccessInfo(uint256, address) view returns (bool, bool, uint256, uint256, bool)",
@@ -120,29 +172,51 @@ export default function ShareAccessPage() {
         client: { public: publicClient, wallet: walletClient as any },
       }) as any;
 
-      // For demo purposes, we'll assume file ID 1
-      const fileId = 1;
+      // The URL contains the metadata CID, use it to find the file ID
+      const metadataCID = fileId; // fileId from URL is actually the metadata CID
+      console.log("🔍 Looking up file ID for metadata CID:", metadataCID);
 
-      const hasRead = await contract.read.hasReadAccess([fileId, address]);
+      const blockchainFileId = await contract.read.hashToFileId([metadataCID]);
+      console.log(
+        "🔍 Found file ID on blockchain:",
+        blockchainFileId ? blockchainFileId.toString() : "Not found"
+      );
+
+      if (!blockchainFileId || blockchainFileId === BigInt(0)) {
+        console.error("❌ File not found on blockchain");
+        setHasAccess(false);
+        return;
+      }
+
+      // Check if user has read access to this specific file
+      const hasRead = await contract.read.hasReadAccess([
+        blockchainFileId,
+        address,
+      ]);
+      console.log("🔍 User read access:", hasRead);
 
       if (hasRead) {
         setHasAccess(true);
 
         if (file.encrypted) {
           try {
-            const wrappedKeyData = await contract.read.getWrappedKey([fileId]);
+            const wrappedKeyData = await contract.read.getWrappedKey([
+              blockchainFileId,
+            ]);
             setWrappedKey(wrappedKeyData);
           } catch (error) {
             console.log("No wrapped key found for this user");
           }
         }
+
+        // Fetch file metadata from IPFS if access is granted
+        await fetchFileMetadata(metadataCID);
       } else {
         setHasAccess(false);
       }
     } catch (error) {
       console.error("Error checking access:", error);
-      // For demo purposes, grant access
-      setHasAccess(true);
+      setHasAccess(false);
     }
   };
 
