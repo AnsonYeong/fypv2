@@ -4,7 +4,15 @@ import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, Lock, Eye, FileText, Calendar, User } from "lucide-react";
+import {
+  Download,
+  Lock,
+  Eye,
+  FileText,
+  Calendar,
+  User,
+  Loader2,
+} from "lucide-react";
 
 interface SharedFile {
   id: string;
@@ -34,6 +42,8 @@ export default function ShareAccessPage() {
   const [hasAccess, setHasAccess] = useState(false);
   const [wrappedKey, setWrappedKey] = useState("");
   const [decryptionPassword, setDecryptionPassword] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   useEffect(() => {
     // Load file details from blockchain using the metadata CID from URL
@@ -103,9 +113,19 @@ export default function ShareAccessPage() {
               owner: metadata.blockchain?.owner || "",
               sharedAt: metadata.blockchain?.timestamp || 0,
               expiresAt: 0, // Will be set from blockchain access info
+              // IMPORTANT: Set the actual file CID for downloads, not the metadata CID
+              cid: metadata.ipfs?.fileCID || metadataCID, // Use the actual file CID from metadata
             }
           : null
       );
+
+      console.log("📁 File updated with metadata:", {
+        name: metadata.fileInfo?.originalName,
+        size: metadata.fileInfo?.originalSize,
+        encrypted: metadata.encryption?.algorithm === "AES-GCM-256",
+        fileCID: metadata.ipfs?.fileCID,
+        metadataCID: metadataCID,
+      });
     } catch (error) {
       console.error("Error fetching file metadata:", error);
     }
@@ -203,6 +223,10 @@ export default function ShareAccessPage() {
             const wrappedKeyData = await contract.read.getWrappedKey([
               blockchainFileId,
             ]);
+            console.log(
+              "🔐 Wrapped key retrieved:",
+              wrappedKeyData ? "Yes" : "No"
+            );
             setWrappedKey(wrappedKeyData);
           } catch (error) {
             console.log("No wrapped key found for this user");
@@ -231,18 +255,341 @@ export default function ShareAccessPage() {
         return;
       }
 
-      // In a real implementation, you'd:
-      // 1. Download the encrypted file from IPFS
-      // 2. Decrypt it using the wrapped key and password
-      // 3. Create a download link
+      setIsDownloading(true);
+      setDownloadProgress(0);
 
-      // For demo purposes, we'll just show a success message
-      alert(
-        "File download started! (This is a demo - in production, the file would be decrypted and downloaded)"
-      );
+      console.log("🔍 Download decision:", {
+        isEncrypted: file.encrypted,
+        hasPassword: !!decryptionPassword,
+        fileState: file,
+      });
+
+      if (file.encrypted && decryptionPassword) {
+        console.log("🔐 Proceeding with encrypted file download");
+        // Handle encrypted file download
+        await downloadEncryptedFile();
+      } else if (!file.encrypted) {
+        console.log("📁 Proceeding with plain file download");
+        // Handle non-encrypted file download
+        await downloadPlainFile();
+      } else {
+        console.log("❌ Missing password for encrypted file");
+        // Missing password for encrypted file
+        alert("Please enter the decryption password for this encrypted file");
+      }
     } catch (error) {
       console.error("Error downloading file:", error);
-      alert("Failed to download file");
+      alert(
+        `Failed to download file: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(0);
+    }
+  };
+
+  const downloadEncryptedFile = async () => {
+    if (!file || !decryptionPassword) return;
+
+    try {
+      setDownloadProgress(10);
+
+      // First, we need to get the file metadata to extract encryption details
+      // Note: file.id is the metadata CID, we need to fetch the metadata first
+      const metadataResponse = await fetch(
+        `/api/ipfs/retrieve?cid=${encodeURIComponent(file.id)}`
+      );
+
+      if (!metadataResponse.ok) {
+        throw new Error("Failed to fetch file metadata");
+      }
+
+      const metadata = await metadataResponse.json();
+      setDownloadProgress(20);
+
+      // Extract encryption details from metadata
+      const { encryption, ipfs } = metadata;
+      if (!encryption || !ipfs) {
+        throw new Error("File metadata is missing encryption information");
+      }
+
+      // The keyWrapped field contains a wrapped key that needs to be unwrapped
+      // using the original password, salt, and iterations
+      console.log("🔑 Unwrapping encryption key with password");
+
+      // Import the key unwrapping function
+      const { unwrapKeyWithPassword } = await import("@/lib/metadata");
+
+      // Unwrap the key using the password, salt, and iterations from metadata
+      const unwrappedKey = unwrapKeyWithPassword(
+        encryption.keyWrapped, // This is the wrapped key
+        decryptionPassword, // Your original password
+        encryption.salt, // Salt used for key derivation
+        encryption.iterations // Number of iterations
+      );
+
+      console.log(
+        "🔐 Key unwrapped successfully, length:",
+        unwrappedKey.length
+      );
+
+      // The unwrappedKey is already in hex format (from unwrapKeyWithPassword)
+      // We just need to validate it and use it directly
+      const hexKey = unwrappedKey;
+
+      console.log("🔑 Key details:", {
+        unwrappedKeyLength: unwrappedKey.length,
+        hexKeyLength: hexKey.length,
+        expectedHexLength: 64, // 32 bytes = 64 hex characters
+        isValidLength: hexKey.length === 64,
+        keyStart: hexKey.substring(0, 8) + "...",
+        keyEnd: "..." + hexKey.substring(hexKey.length - 8),
+      });
+
+      // Validate key length (64 hex characters = 32 bytes)
+      if (hexKey.length !== 64) {
+        throw new Error(
+          `Invalid key length: ${hexKey.length} hex characters. Expected 64 characters (32 bytes) for AES-256-GCM.`
+        );
+      }
+
+      // Validate hex format
+      if (!/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+        throw new Error(
+          "Invalid key format. Expected 64-character hex string."
+        );
+      }
+
+      setDownloadProgress(40);
+
+      // Download and decrypt the file using the ACTUAL file CID from metadata
+      // NOT the metadata CID from the URL
+      const requestBody = {
+        cid: ipfs.fileCID, // Use the actual encrypted file CID, not the metadata CID
+        key: hexKey, // Use the hex-converted key (API expects hex format)
+        iv: encryption.iv,
+        filename: file.name,
+      };
+
+      console.log("🔍 Sending decryption request:", {
+        cid: requestBody.cid,
+        keyLength: requestBody.key.length,
+        ivLength: requestBody.iv.length,
+        filename: requestBody.filename,
+      });
+
+      const decryptResponse = await fetch("/api/ipfs/retrieve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!decryptResponse.ok) {
+        let errorMessage = "Decryption failed";
+        try {
+          const errorData = await decryptResponse.json();
+          errorMessage =
+            errorData.error ||
+            errorData.details ||
+            `HTTP ${decryptResponse.status}: ${decryptResponse.statusText}`;
+        } catch (parseError) {
+          errorMessage = `HTTP ${decryptResponse.status}: ${decryptResponse.statusText}`;
+        }
+
+        console.error("❌ Decryption API error:", {
+          status: decryptResponse.status,
+          statusText: decryptResponse.statusText,
+          error: errorMessage,
+        });
+
+        throw new Error(errorMessage);
+      }
+
+      setDownloadProgress(80);
+
+      const decryptResult = await decryptResponse.json();
+
+      if (!decryptResult.success) {
+        throw new Error(decryptResult.message || "Decryption failed");
+      }
+
+      console.log("🔍 Decryption result:", {
+        success: decryptResult.success,
+        filename: decryptResult.filename,
+        decryptedSize: decryptResult.decryptedSize,
+        encryptedSize: decryptResult.encryptedSize,
+        dataLength: decryptResult.decryptedData?.length || 0,
+        dataStart: decryptResult.decryptedData?.substring(0, 20) || "none",
+        hasData: !!decryptResult.decryptedData,
+        dataType: typeof decryptResult.decryptedData,
+        isBase64: decryptResult.decryptedData
+          ? /^[A-Za-z0-9+/]*={0,2}$/.test(decryptResult.decryptedData)
+          : false,
+      });
+
+      setDownloadProgress(90);
+
+      // Download the decrypted file
+      downloadFileFromBase64(
+        decryptResult.decryptedData,
+        file.name,
+        decryptResult.decryptedSize
+      );
+
+      setDownloadProgress(100);
+      console.log(
+        "✅ Encrypted file downloaded and decrypted successfully using unwrapped key!"
+      );
+    } catch (error) {
+      console.error("Error downloading encrypted file:", error);
+      throw error;
+    }
+  };
+
+  const downloadPlainFile = async () => {
+    if (!file) return;
+
+    try {
+      setDownloadProgress(20);
+
+      // For non-encrypted files, download directly from IPFS
+      const response = await fetch(
+        `https://gateway.pinata.cloud/ipfs/${file.cid}`,
+        {
+          method: "GET",
+          headers: {
+            "User-Agent": "BlockShare/1.0",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+
+      setDownloadProgress(60);
+
+      const blob = await response.blob();
+
+      setDownloadProgress(80);
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setDownloadProgress(100);
+      console.log("✅ Plain file downloaded successfully!");
+    } catch (error) {
+      console.error("Error downloading plain file:", error);
+      throw error;
+    }
+  };
+
+  const downloadFileFromBase64 = (
+    base64Data: string,
+    filename: string,
+    size: number
+  ) => {
+    try {
+      console.log("🔍 Processing download data:", {
+        filename,
+        size,
+        dataLength: base64Data?.length || 0,
+        dataType: typeof base64Data,
+        isBase64: base64Data
+          ? /^[A-Za-z0-9+/]*={0,2}$/.test(base64Data)
+          : false,
+        dataStart: base64Data?.substring(0, 50) || "none",
+      });
+
+      if (!base64Data || typeof base64Data !== "string") {
+        throw new Error("Invalid data received for download");
+      }
+
+      // Convert base64 to blob
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+
+      console.log("🔍 Byte array created:", {
+        length: byteArray.length,
+        firstBytes: Array.from(byteArray.slice(0, 10))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(" "),
+      });
+
+      // Detect file format and set correct extension
+      let finalFilename = filename;
+      if (!finalFilename.includes(".")) {
+        // Check if it's an SVG (starts with <?xml)
+        if (base64Data.startsWith("PD94bWwgdmVyc2lvbj0iMS4wIj8+")) {
+          finalFilename = "decrypted-file.svg";
+        }
+        // Check if it's a PDF (starts with JVBERi0)
+        else if (base64Data.startsWith("JVBERi0")) {
+          finalFilename = "decrypted-file.pdf";
+        }
+        // Check if it's a PNG (starts with iVBORw0KGgo)
+        else if (base64Data.startsWith("iVBORw0KGgo")) {
+          finalFilename = "decrypted-file.png";
+        }
+        // Check if it's a JPEG (starts with /9j/4AAQ)
+        else if (base64Data.startsWith("/9j/4AAQ")) {
+          finalFilename = "decrypted-file.jpg";
+        } else {
+          finalFilename = "decrypted-file";
+        }
+      }
+
+      // Set proper MIME type based on file extension
+      let mimeType = "application/octet-stream";
+      if (finalFilename.endsWith(".pdf")) {
+        mimeType = "application/pdf";
+      } else if (finalFilename.endsWith(".svg")) {
+        mimeType = "image/svg+xml";
+      } else if (finalFilename.endsWith(".png")) {
+        mimeType = "image/png";
+      } else if (
+        finalFilename.endsWith(".jpg") ||
+        finalFilename.endsWith(".jpeg")
+      ) {
+        mimeType = "image/jpeg";
+      }
+
+      // Create blob with proper MIME type
+      const blob = new Blob([byteArray], { type: mimeType });
+
+      console.log(`🔍 File format detected: ${finalFilename} (${mimeType})`);
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = finalFilename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      console.log(
+        `✅ File downloaded: ${finalFilename} (${size} bytes) with MIME type: ${mimeType}`
+      );
+    } catch (error) {
+      console.error("Error creating download link:", error);
+      throw new Error("Failed to create download link");
     }
   };
 
@@ -416,30 +763,57 @@ export default function ShareAccessPage() {
                   {file.encrypted && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Decryption Password
+                        Your Encryption Password
                       </label>
                       <Input
                         type="password"
                         value={decryptionPassword}
                         onChange={(e) => setDecryptionPassword(e.target.value)}
-                        placeholder="Enter the password provided by the sender"
+                        placeholder="Enter your original encryption password"
                         className="max-w-md"
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        The sender should have provided you with a password to
-                        decrypt this file.
+                        Enter the password you used when you originally
+                        encrypted this file.
                       </p>
+                    </div>
+                  )}
+
+                  {/* Download Progress */}
+                  {isDownloading && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>Downloading file...</span>
+                        <span>{downloadProgress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${downloadProgress}%` }}
+                        ></div>
+                      </div>
                     </div>
                   )}
 
                   <Button
                     onClick={handleDownload}
-                    disabled={file.encrypted && !decryptionPassword}
+                    disabled={
+                      (file.encrypted && !decryptionPassword) || isDownloading
+                    }
                     size="lg"
                     className="w-full md:w-auto"
                   >
-                    <Download className="h-5 w-5 mr-2" />
-                    Download File
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-5 w-5 mr-2" />
+                        Download File
+                      </>
+                    )}
                   </Button>
                 </div>
               ) : (
@@ -472,7 +846,7 @@ export default function ShareAccessPage() {
                 control. Your wallet address is used to verify your identity and
                 permissions.
                 {file.encrypted &&
-                  " Encrypted files require the decryption password provided by the sender."}
+                  " Encrypted files require your original encryption password to decrypt."}
               </p>
             </div>
           </div>
