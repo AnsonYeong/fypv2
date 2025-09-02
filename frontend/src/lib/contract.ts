@@ -17,7 +17,8 @@ export type GetFileInfoResult = [
   boolean, // isActive
   string, // metadataCID
   boolean, // isEncrypted
-  string // masterKeyHash
+  string, // masterKeyHash
+  bigint // versionCount
 ];
 export type GetUserFilesResult = bigint[];
 
@@ -236,6 +237,7 @@ const abi = [
       { internalType: "string", name: "metadataCID", type: "string" },
       { internalType: "bool", name: "isEncrypted", type: "bool" },
       { internalType: "string", name: "masterKeyHash", type: "string" },
+      { internalType: "uint256", name: "versionCount", type: "uint256" },
     ],
     stateMutability: "view",
     type: "function",
@@ -307,6 +309,13 @@ const abi = [
     type: "function",
   },
   {
+    inputs: [{ internalType: "string", name: "", type: "string" }],
+    name: "metadataToFileId",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [],
     name: "getTotalFiles",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
@@ -358,6 +367,23 @@ const abi = [
       { internalType: "uint256", name: "_expiresAt", type: "uint256" },
     ],
     name: "shareEncryptedFile",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "_fileId", type: "uint256" }],
+    name: "getFileVersions",
+    outputs: [{ internalType: "string[]", name: "", type: "string[]" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "_fileId", type: "uint256" },
+      { internalType: "uint256", name: "_versionIndex", type: "uint256" },
+    ],
+    name: "rollbackFile",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

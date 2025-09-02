@@ -8,9 +8,18 @@ export interface AppFile {
   sharedWith: string[];
   permissions: "read" | "write" | "admin";
   versions: FileVersion[];
-  cid?: string;
-  metadataCID?: string; // IPFS CID for metadata.json
+
+  // IPFS fields (existing)
+  cid?: string; // File content CID
+  metadataCID?: string; // Current metadata CID (primary reference)
   gatewayUrl?: string;
+
+  // Blockchain fields (new for version history)
+  fileId?: number; // Blockchain file ID (for version operations)
+  versionCount?: number; // Number of versions on blockchain
+  blockchainVersions?: string[]; // Array of metadata CIDs from blockchain events
+
+  // Encryption fields
   encrypted?: boolean;
   encryptionData?: {
     key: string;
@@ -25,6 +34,13 @@ export interface FileVersion {
   timestamp: Date;
   size: number;
   changes: string;
+
+  // Blockchain version fields (new)
+  metadataCID?: string; // IPFS metadata CID for this version
+  blockchainVersionIndex?: number; // Index in blockchain version array
+  isCurrentVersion?: boolean; // Whether this is the current version
+  fileId?: number; // Blockchain file ID
+  prevCID?: string; // Previous version's metadata CID (for chaining)
 }
 
 // Storage keys
@@ -237,4 +253,144 @@ export const formatDate = (date: Date): string => {
     month: "short",
     day: "numeric",
   });
+};
+
+// Version History Reconstruction Functions for Option C (Hybrid Approach)
+
+/**
+ * Reconstruct version history from blockchain events
+ * This is the core function for Option C implementation
+ */
+export const reconstructVersionHistory = async (
+  file: AppFile,
+  blockchainVersions: string[]
+): Promise<FileVersion[]> => {
+  const versions: FileVersion[] = [];
+
+  // Start from the current version and work backwards
+  let currentCID = file.metadataCID;
+  let versionIndex = blockchainVersions.length - 1;
+
+  while (currentCID && versionIndex >= 0) {
+    try {
+      // Retrieve metadata for this version
+      const metadata = await retrieveFileFromIPFS(currentCID);
+
+      if (metadata) {
+        const version: FileVersion = {
+          id: `${file.id}_v${versionIndex + 1}`,
+          version: versionIndex + 1,
+          timestamp: metadata.lastModified || new Date(),
+          size: metadata.size || 0,
+          changes: `Version ${versionIndex + 1}`, // Could be enhanced with actual change detection
+          metadataCID: currentCID,
+          blockchainVersionIndex: versionIndex,
+          isCurrentVersion: versionIndex === blockchainVersions.length - 1,
+          fileId: file.fileId,
+          prevCID:
+            versionIndex > 0 ? blockchainVersions[versionIndex - 1] : undefined,
+        };
+
+        versions.unshift(version); // Add to beginning to maintain chronological order
+
+        // Move to previous version
+        currentCID =
+          versionIndex > 0 ? blockchainVersions[versionIndex - 1] : undefined;
+        versionIndex--;
+      } else {
+        // If metadata retrieval fails, break the chain
+        console.warn(`Failed to retrieve metadata for CID: ${currentCID}`);
+        break;
+      }
+    } catch (error) {
+      console.error(
+        `Error reconstructing version for CID ${currentCID}:`,
+        error
+      );
+      break;
+    }
+  }
+
+  return versions;
+};
+
+/**
+ * Get version history from blockchain events
+ * This function fetches the FileVersioned events and reconstructs the history
+ */
+export const getVersionHistoryFromBlockchain = async (
+  fileId: number,
+  metadataCID: string
+): Promise<FileVersion[]> => {
+  try {
+    // This would typically involve:
+    // 1. Querying blockchain events for FileVersioned events
+    // 2. Extracting the version chain from events
+    // 3. Reconstructing the version history
+
+    // For now, we'll use the contract's getFileVersions function
+    // In a full implementation, you'd query events directly
+
+    const response = await fetch(`/api/contract/version/history/${fileId}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch version history from blockchain");
+    }
+
+    const data = await response.json();
+    const blockchainVersions = data.versions || [];
+
+    // Create a temporary AppFile object for reconstruction
+    const tempFile: AppFile = {
+      id: `temp_${fileId}`,
+      name: "temp",
+      size: 0,
+      type: "temp",
+      lastModified: new Date(),
+      owner: "",
+      sharedWith: [],
+      permissions: "read",
+      versions: [],
+      metadataCID: metadataCID,
+      fileId: fileId,
+      blockchainVersions: blockchainVersions,
+    };
+
+    return await reconstructVersionHistory(tempFile, blockchainVersions);
+  } catch (error) {
+    console.error("Error getting version history from blockchain:", error);
+    return [];
+  }
+};
+
+/**
+ * Update file with version history from blockchain
+ * This function syncs the local file with blockchain version data
+ */
+export const syncFileWithBlockchainVersions = async (
+  file: AppFile
+): Promise<AppFile> => {
+  if (!file.fileId || !file.metadataCID) {
+    return file; // No blockchain data to sync
+  }
+
+  try {
+    // Get version history from blockchain
+    const blockchainVersions = await getVersionHistoryFromBlockchain(
+      file.fileId,
+      file.metadataCID
+    );
+
+    // Update the file with blockchain version data
+    const updatedFile: AppFile = {
+      ...file,
+      versions: blockchainVersions,
+      versionCount: blockchainVersions.length,
+      blockchainVersions: blockchainVersions.map((v) => v.metadataCID || ""),
+    };
+
+    return updatedFile;
+  } catch (error) {
+    console.error("Error syncing file with blockchain versions:", error);
+    return file; // Return original file if sync fails
+  }
 };

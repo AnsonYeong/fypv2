@@ -26,7 +26,7 @@ import {
 } from "viem";
 import * as Chains from "viem/chains";
 
-export function DashboardClient() {
+function DashboardClient() {
   const [files, setFiles] = useState<AppFile[]>([]);
   const [sharedFiles, setSharedFiles] = useState<AppFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<AppFile | null>(null);
@@ -47,6 +47,10 @@ export function DashboardClient() {
   const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isProfileInfoOpen, setProfileInfoOpen] = useState(false);
   const [isLogoutOpen, setLogoutOpen] = useState(false);
+
+  // Version update state
+  const [isVersionUpdate, setIsVersionUpdate] = useState(false);
+  const [fileToUpdate, setFileToUpdate] = useState<AppFile | null>(null);
 
   // Get wallet address from localStorage or session
   useEffect(() => {
@@ -576,11 +580,23 @@ export function DashboardClient() {
   };
 
   const handleAddNewFile = (newFile: AppFile) => {
-    const updatedFiles = [newFile, ...files];
-    setFiles(updatedFiles);
-    // Save updated files to storage for current user
-    const currentUserId = walletAddress || "demo-user";
-    saveFilesToStorage(updatedFiles, currentUserId);
+    if (isVersionUpdate && fileToUpdate) {
+      // For version updates, replace the existing file
+      const updatedFiles = files.map((file) =>
+        file.id === fileToUpdate.id ? newFile : file
+      );
+      setFiles(updatedFiles);
+      // Save updated files to storage for current user
+      const currentUserId = walletAddress || "demo-user";
+      saveFilesToStorage(updatedFiles, currentUserId);
+    } else {
+      // For new uploads, add to the beginning
+      const updatedFiles = [newFile, ...files];
+      setFiles(updatedFiles);
+      // Save updated files to storage for current user
+      const currentUserId = walletAddress || "demo-user";
+      saveFilesToStorage(updatedFiles, currentUserId);
+    }
     // Clear any previous IPFS errors since we just uploaded successfully
     setIpfsError(null);
   };
@@ -1216,10 +1232,19 @@ export function DashboardClient() {
 
       <FileUploadDialog
         isOpen={isUploadOpen}
-        setIsOpen={setUploadOpen}
+        setIsOpen={(open) => {
+          setUploadOpen(open);
+          if (!open) {
+            // Reset version update state when dialog closes
+            setIsVersionUpdate(false);
+            setFileToUpdate(null);
+          }
+        }}
         onFileUploaded={handleAddNewFile}
         userId={walletAddress || "demo-user"}
         walletAddress={walletAddress || undefined}
+        isVersionUpdate={isVersionUpdate}
+        originalFile={fileToUpdate || undefined}
       />
 
       <EnhancedDownloadDialog
@@ -1253,6 +1278,11 @@ export function DashboardClient() {
             isOpen={isVersionsOpen}
             setIsOpen={setVersionsOpen}
             file={selectedFile}
+            onUpdateFile={(file) => {
+              setFileToUpdate(file);
+              setIsVersionUpdate(true);
+              setUploadOpen(true);
+            }}
           />
         </>
       )}

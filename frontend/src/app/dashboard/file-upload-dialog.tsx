@@ -15,6 +15,8 @@ interface FileUploadDialogProps {
   onFileUploaded: (file: AppFile) => void;
   userId?: string;
   walletAddress?: string; // Add wallet address prop
+  isVersionUpdate?: boolean; // Flag to indicate if this is a version update
+  originalFile?: AppFile; // Original file being updated
 }
 
 export function FileUploadDialog({
@@ -23,6 +25,8 @@ export function FileUploadDialog({
   onFileUploaded,
   userId = "demo-user",
   walletAddress, // Add wallet address parameter
+  isVersionUpdate = false,
+  originalFile,
 }: FileUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -58,6 +62,17 @@ export function FileUploadDialog({
         form.append("encrypt", "true");
       }
 
+      // If this is a version update, add the original file info
+      if (isVersionUpdate && originalFile) {
+        form.append("isVersionUpdate", "true");
+        form.append("originalFileId", originalFile.id);
+        form.append("originalMetadataCID", originalFile.metadataCID || "");
+        form.append(
+          "originalBlockchainFileId",
+          originalFile.fileId?.toString() || ""
+        );
+      }
+
       const res = await fetch("/api/upload", {
         method: "POST",
         body: form,
@@ -72,15 +87,20 @@ export function FileUploadDialog({
       const { cid, gatewayUrl, encrypted, encryptionData } = await res.json();
 
       const newFile: AppFile = {
-        id: Date.now().toString(),
+        id:
+          isVersionUpdate && originalFile
+            ? originalFile.id
+            : Date.now().toString(),
         name: fileName,
         size: selectedFile.size,
         type: selectedFile.type,
         lastModified: new Date(),
         owner: walletAddress || "0x0000000000000000000000000000000000000000",
-        sharedWith: [],
-        permissions: "admin",
-        versions: [],
+        sharedWith:
+          isVersionUpdate && originalFile ? originalFile.sharedWith : [],
+        permissions:
+          isVersionUpdate && originalFile ? originalFile.permissions : "admin",
+        versions: isVersionUpdate && originalFile ? originalFile.versions : [],
         cid: cid, // This is the file CID
         metadataCID: "", // Will be set after metadata upload
         gatewayUrl: gatewayUrl,
@@ -93,12 +113,45 @@ export function FileUploadDialog({
                 algorithm: encryptionData.algorithm,
               }
             : undefined,
+        // Preserve blockchain data for version updates
+        fileId: undefined, // Will be set after smart contract call
+        versionCount: undefined, // Will be set after smart contract call
+        blockchainVersions:
+          isVersionUpdate && originalFile
+            ? originalFile.blockchainVersions
+            : undefined,
       };
 
       // Save to localStorage for the current user
       try {
         const existingFiles = getFilesFromStorage(userId);
-        const updatedFiles = [newFile, ...existingFiles];
+        let updatedFiles: AppFile[];
+
+        if (isVersionUpdate && originalFile) {
+          // For version updates, replace the original file with updated version
+          updatedFiles = existingFiles.map((file) =>
+            file.id === originalFile.id
+              ? {
+                  ...newFile,
+                  // Preserve original file properties that shouldn't change
+                  id: originalFile.id,
+                  owner: originalFile.owner,
+                  sharedWith: originalFile.sharedWith,
+                  permissions: originalFile.permissions,
+                  // Update version-related properties
+                  lastModified: new Date(),
+                  size: selectedFile.size,
+                  cid: cid,
+                  metadataCID: newFile.metadataCID || cid,
+                  gatewayUrl: gatewayUrl,
+                }
+              : file
+          );
+        } else {
+          // For new uploads, add to the beginning
+          updatedFiles = [newFile, ...existingFiles];
+        }
+
         saveFilesToStorage(updatedFiles, userId);
       } catch (error) {
         console.error("Error saving to localStorage:", error);
@@ -233,8 +286,10 @@ export function FileUploadDialog({
 
               const abi = parseAbi([
                 "function uploadFileHash(string _fileHash, string _fileName, uint256 _fileSize, string _metadataCID, bool _isEncrypted, string _masterKeyHash) returns (uint256)",
+                "function updateFile(uint256 _fileId, string _newFileHash, uint256 _newFileSize, string _newMetadataCID)",
                 "function hashToFileId(string) view returns (uint256)",
-                "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string)",
+                "function metadataToFileId(string) view returns (uint256)",
+                "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string, uint256)",
               ]);
 
               const contract = getContract({
@@ -244,9 +299,9 @@ export function FileUploadDialog({
               });
 
               // Pre-check: avoid duplicate registration
-              const existingId = (await (contract as any).read.hashToFileId([
-                metaJson.metadataCID,
-              ])) as bigint;
+              const existingId = (await (contract as any).read.metadataToFileId(
+                [metaJson.metadataCID]
+              )) as bigint;
               if (existingId && existingId > BigInt(0)) {
                 setChainFileId(Number(existingId));
                 console.log(
@@ -260,34 +315,66 @@ export function FileUploadDialog({
                     ? await generateSHA256(encryptionData.key)
                     : "";
 
-                const txHash = await (contract as any).write.uploadFileHash(
-                  [
-                    metaJson.metadataCID,
-                    fileName,
-                    BigInt(selectedFile.size),
-                    metaJson.metadataCID,
-                    encrypted || false,
-                    masterKeyHash,
-                  ],
-                  { account }
-                );
+                let txHash: string;
+                let fileId: number;
+
+                if (isVersionUpdate && originalFile?.fileId) {
+                  // For version updates, call updateFile
+                  console.log("🔄 Updating existing file version...");
+                  txHash = await (contract as any).write.updateFile(
+                    [
+                      BigInt(originalFile.fileId),
+                      metaJson.metadataCID, // new file hash
+                      BigInt(selectedFile.size),
+                      metaJson.metadataCID, // new metadata CID
+                    ],
+                    { account }
+                  );
+                  fileId = originalFile.fileId; // Use existing file ID
+                } else {
+                  // For new uploads, call uploadFileHash
+                  console.log("📤 Uploading new file...");
+                  txHash = await (contract as any).write.uploadFileHash(
+                    [
+                      metaJson.metadataCID,
+                      fileName,
+                      BigInt(selectedFile.size),
+                      metaJson.metadataCID,
+                      encrypted || false,
+                      masterKeyHash,
+                    ],
+                    { account }
+                  );
+                  // For new uploads, we'll get the fileId from the transaction receipt
+                  fileId = 0; // Will be updated after transaction confirmation
+                }
 
                 setChainTxHash(txHash as string);
 
-                // Optional: wait for confirmation and resolve fileId
+                // Wait for confirmation and resolve fileId
                 const receipt = await publicClient.waitForTransactionReceipt({
                   hash: txHash as `0x${string}`,
                 });
                 console.log(
-                  "📗 Contract upload mined in block:",
+                  "📗 Contract transaction mined in block:",
                   Number(receipt.blockNumber)
                 );
 
-                const fileIdBig = (await (contract as any).read.hashToFileId([
-                  metaJson.metadataCID,
-                ])) as bigint;
-                if (fileIdBig && fileIdBig > BigInt(0)) {
-                  setChainFileId(Number(fileIdBig));
+                if (isVersionUpdate && originalFile?.fileId) {
+                  // For version updates, use the existing file ID
+                  setChainFileId(originalFile.fileId);
+                  fileId = originalFile.fileId;
+                  newFile.fileId = originalFile.fileId;
+                } else {
+                  // For new uploads, get the file ID from the contract
+                  const fileIdBig = (await (
+                    contract as any
+                  ).read.metadataToFileId([metaJson.metadataCID])) as bigint;
+                  if (fileIdBig && fileIdBig > BigInt(0)) {
+                    setChainFileId(Number(fileIdBig));
+                    fileId = Number(fileIdBig);
+                    newFile.fileId = Number(fileIdBig);
+                  }
                 }
               }
             } catch (chainErr) {
@@ -296,6 +383,49 @@ export function FileUploadDialog({
           }
         } catch (metaErr) {
           console.error("Metadata processing error:", metaErr);
+        }
+      }
+
+      // For version updates, we need to get the updated file info from the blockchain
+      if (isVersionUpdate && originalFile && originalFile.fileId) {
+        try {
+          console.log("🔄 Getting updated file info from blockchain...");
+
+          // Get updated file info from the contract
+          const { getReadContract } = await import("@/lib/contract");
+          const readContract = getReadContract();
+
+          const fileInfo = (await readContract.read.getFileInfo([
+            BigInt(originalFile.fileId),
+          ])) as [
+            string,
+            string,
+            bigint,
+            string,
+            bigint,
+            boolean,
+            string,
+            boolean,
+            string,
+            bigint
+          ];
+
+          // Update the file with new version info
+          newFile.fileId = originalFile.fileId;
+          newFile.versionCount = Number(fileInfo[9]); // versionCount
+          newFile.metadataCID = fileInfo[6]; // metadataCID
+
+          // Also update the chainFileId state
+          setChainFileId(originalFile.fileId);
+
+          console.log("✅ File version updated successfully:", {
+            fileId: originalFile.fileId,
+            versionCount: Number(fileInfo[9]),
+            metadataCID: fileInfo[6],
+          });
+        } catch (versionErr) {
+          console.error("Error getting updated file info:", versionErr);
+          // Don't fail the entire upload, just log the error
         }
       }
 
@@ -360,7 +490,7 @@ export function FileUploadDialog({
           }
           setIsOpen(open);
         }}
-        title="Upload File"
+        title={isVersionUpdate ? "Update File Version" : "Upload File"}
         isLoading={isUploading}
         disableCloseOnOverlayClick={isUploading}
         loadingContent={

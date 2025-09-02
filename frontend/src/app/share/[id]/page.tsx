@@ -196,7 +196,9 @@ export default function ShareAccessPage() {
       const metadataCID = fileId; // fileId from URL is actually the metadata CID
       console.log("🔍 Looking up file ID for metadata CID:", metadataCID);
 
-      const blockchainFileId = await contract.read.hashToFileId([metadataCID]);
+      const blockchainFileId = await contract.read.metadataToFileId([
+        metadataCID,
+      ]);
       console.log(
         "🔍 Found file ID on blockchain:",
         blockchainFileId ? blockchainFileId.toString() : "Not found"

@@ -9,41 +9,36 @@ contract FileRegistryV2 {
         address uploader;       // Address of the user who uploaded
         uint256 timestamp;      // When the file was uploaded
         bool isActive;          // Whether the file record is active
-        string metadataCID;     // IPFS CID pointing to metadata.json
+        string metadataCID;     // Always points to latest metadata.json
         bool isEncrypted;       // Whether the file is encrypted
         string masterKeyHash;   // Hash of the master encryption key
+        uint256 versionCount;   // Number of versions
     }
 
-    // Mapping from file ID to file record
     mapping(uint256 => FileRecord) public files;
-
-    // Mapping from user address to their file IDs
     mapping(address => uint256[]) public userFiles;
-
-    // Mapping from hash to file ID (to prevent duplicate uploads)
     mapping(string => uint256) public hashToFileId;
+    mapping(string => uint256) public metadataToFileId; // Maps metadata CID to file ID
 
-    // Permissions: fileId => user => access
+    // version history: fileId => list of metadataCIDs
+    mapping(uint256 => string[]) public fileVersions;
+
+    // permissions
     mapping(uint256 => mapping(address => bool)) public canRead;
     mapping(uint256 => mapping(address => bool)) public canWrite;
 
-    // Key management: fileId => user => wrapped key for that user
+    // wrapped keys per user
     mapping(uint256 => mapping(address => string)) public userWrappedKeys;
-    
-    // Access timestamps: fileId => user => when access was granted
+
+    // access management
     mapping(uint256 => mapping(address => uint256)) public accessGrantedAt;
-    
-    // Access expiration: fileId => user => when access expires (0 = no expiration)
     mapping(uint256 => mapping(address => uint256)) public accessExpiresAt;
 
-    // Track users with access for each file
+    // track users with access
     mapping(uint256 => address[]) public fileUsersWithAccess;
-    mapping(uint256 => mapping(address => uint256)) public userAccessIndex; // Index in the array
+    mapping(uint256 => mapping(address => uint256)) public userAccessIndex;
 
-    // Counter for file IDs
     uint256 public nextFileId = 1;
-
-    // Contract owner
     address public owner;
 
     // Events
@@ -62,20 +57,29 @@ contract FileRegistryV2 {
         string newFileHash,
         string newMetadataCID,
         uint256 newSize,
+        uint256 version,
         uint256 timestamp,
         address indexed updatedBy
     );
 
+    event FileVersioned(
+        uint256 indexed fileId,
+        string oldCID,
+        string newCID,
+        uint256 version,
+        uint256 timestamp,
+        address indexed updatedBy
+    );
+
+    event FileRolledBack(uint256 indexed fileId, string restoredCID, uint256 version, address indexed restoredBy);
     event FileDeactivated(uint256 indexed fileId, address indexed deactivatedBy);
     event ReadGranted(uint256 indexed fileId, address indexed grantedTo, uint256 expiresAt);
     event WriteGranted(uint256 indexed fileId, address indexed grantedTo, uint256 expiresAt);
     event AccessRevoked(uint256 indexed fileId, address indexed revokedFrom);
     event KeyShared(uint256 indexed fileId, address indexed sharedWith, string wrappedKey);
-    event AccessExpired(uint256 indexed fileId, address indexed user);
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only contract owner can call this function");
-        _;
+    constructor() {
+        owner = msg.sender;
     }
 
     modifier onlyFileOwner(uint256 _fileId) {
@@ -94,10 +98,6 @@ contract FileRegistryV2 {
         _;
     }
 
-    constructor() {
-        owner = msg.sender;
-    }
-
     /**
      * @dev Upload a file hash to the blockchain
      */
@@ -112,12 +112,10 @@ contract FileRegistryV2 {
         require(bytes(_fileHash).length > 0, "File hash cannot be empty");
         require(bytes(_fileName).length > 0, "File name cannot be empty");
         require(_fileSize > 0, "File size must be greater than 0");
-        require(hashToFileId[_fileHash] == 0, "File with this hash already exists");
         require(bytes(_metadataCID).length > 0, "metadataCID cannot be empty");
+        require(hashToFileId[_fileHash] == 0, "File with this hash already exists");
 
-        uint256 fileId = nextFileId;
-        nextFileId++;
-
+        uint256 fileId = nextFileId++;
         files[fileId] = FileRecord({
             fileHash: _fileHash,
             fileName: _fileName,
@@ -127,13 +125,18 @@ contract FileRegistryV2 {
             isActive: true,
             metadataCID: _metadataCID,
             isEncrypted: _isEncrypted,
-            masterKeyHash: _masterKeyHash
+            masterKeyHash: _masterKeyHash,
+            versionCount: 1
         });
 
         userFiles[msg.sender].push(fileId);
         hashToFileId[_fileHash] = fileId;
+        metadataToFileId[_metadataCID] = fileId;
 
-        // Grant owner full access
+        // init version history
+        fileVersions[fileId].push(_metadataCID);
+
+        // owner full access
         canRead[fileId][msg.sender] = true;
         canWrite[fileId][msg.sender] = true;
         accessGrantedAt[fileId][msg.sender] = block.timestamp;
@@ -143,7 +146,7 @@ contract FileRegistryV2 {
     }
 
     /**
-     * @dev Update file metadata (requires write access)
+     * @dev Update file metadata (creates a new version)
      */
     function updateFile(
         uint256 _fileId,
@@ -157,90 +160,98 @@ contract FileRegistryV2 {
         require(bytes(_newMetadataCID).length > 0, "metadataCID cannot be empty");
 
         FileRecord storage file = files[_fileId];
+        string memory oldCID = file.metadataCID;
+
+        // Update the metadataToFileId mapping for the new metadata CID
+        metadataToFileId[_newMetadataCID] = _fileId;
+
         file.fileHash = _newFileHash;
         file.fileSize = _newFileSize;
         file.metadataCID = _newMetadataCID;
         file.timestamp = block.timestamp;
+        file.versionCount++;
 
-        emit FileUpdated(_fileId, _newFileHash, _newMetadataCID, _newFileSize, block.timestamp, msg.sender);
+        fileVersions[_fileId].push(_newMetadataCID);
+
+        emit FileUpdated(_fileId, _newFileHash, _newMetadataCID, _newFileSize, file.versionCount, block.timestamp, msg.sender);
+        emit FileVersioned(_fileId, oldCID, _newMetadataCID, file.versionCount, block.timestamp, msg.sender);
+    }
+
+    /**
+     * @dev Rollback to a previous version
+     */
+    function rollbackFile(uint256 _fileId, uint256 _versionIndex) public fileExists(_fileId) onlyFileOwner(_fileId) {
+        require(_versionIndex < fileVersions[_fileId].length, "Invalid version index");
+
+        string memory restoreCID = fileVersions[_fileId][_versionIndex];
+        files[_fileId].metadataCID = restoreCID;
+        files[_fileId].timestamp = block.timestamp;
+
+        emit FileRolledBack(_fileId, restoreCID, _versionIndex + 1, msg.sender);
+    }
+
+    function getFileVersions(uint256 _fileId) public view fileExists(_fileId) returns (string[] memory) {
+        return fileVersions[_fileId];
     }
 
     /**
      * @dev Grant read access with optional expiration
      */
-    function grantRead(
-        uint256 _fileId, 
-        address _user, 
-        uint256 _expiresAt
-    ) public onlyFileOwner(_fileId) fileExists(_fileId) {
+    function grantRead(uint256 _fileId, address _user, uint256 _expiresAt) public onlyFileOwner(_fileId) fileExists(_fileId) {
         require(_user != address(0), "Invalid user address");
         require(_expiresAt == 0 || _expiresAt > block.timestamp, "Expiration must be in the future");
-        
+
         canRead[_fileId][_user] = true;
         accessGrantedAt[_fileId][_user] = block.timestamp;
         accessExpiresAt[_fileId][_user] = _expiresAt;
-        
-        // Add user to access tracking if not already there
+
         if (userAccessIndex[_fileId][_user] == 0) {
             fileUsersWithAccess[_fileId].push(_user);
             userAccessIndex[_fileId][_user] = fileUsersWithAccess[_fileId].length;
         }
-        
+
         emit ReadGranted(_fileId, _user, _expiresAt);
     }
 
     /**
      * @dev Grant write access with optional expiration
      */
-    function grantWrite(
-        uint256 _fileId, 
-        address _user, 
-        uint256 _expiresAt
-    ) public onlyFileOwner(_fileId) fileExists(_fileId) {
+    function grantWrite(uint256 _fileId, address _user, uint256 _expiresAt) public onlyFileOwner(_fileId) fileExists(_fileId) {
         require(_user != address(0), "Invalid user address");
         require(_expiresAt == 0 || _expiresAt > block.timestamp, "Expiration must be in the future");
-        
+
         canWrite[_fileId][_user] = true;
         accessGrantedAt[_fileId][_user] = block.timestamp;
         accessExpiresAt[_fileId][_user] = _expiresAt;
-        
-        // Add user to access tracking if not already there
+
         if (userAccessIndex[_fileId][_user] == 0) {
             fileUsersWithAccess[_fileId].push(_user);
             userAccessIndex[_fileId][_user] = fileUsersWithAccess[_fileId].length;
         }
-        
+
         emit WriteGranted(_fileId, _user, _expiresAt);
     }
 
     /**
-     * @dev Share encrypted file with user (grants read access + stores wrapped key)
+     * @dev Share encrypted file with wrapped key
      */
-    function shareEncryptedFile(
-        uint256 _fileId,
-        address _user,
-        string memory _wrappedKey,
-        uint256 _expiresAt
-    ) public onlyFileOwner(_fileId) fileExists(_fileId) {
+    function shareEncryptedFile(uint256 _fileId, address _user, string memory _wrappedKey, uint256 _expiresAt)
+        public onlyFileOwner(_fileId) fileExists(_fileId) {
         require(files[_fileId].isEncrypted, "File is not encrypted");
         require(_user != address(0), "Invalid user address");
-        require(_expiresAt == 0 || _expiresAt > block.timestamp, "Expiration must be in the future");
         require(bytes(_wrappedKey).length > 0, "Wrapped key cannot be empty");
-        
-        // Grant read access
+
         canRead[_fileId][_user] = true;
         accessGrantedAt[_fileId][_user] = block.timestamp;
         accessExpiresAt[_fileId][_user] = _expiresAt;
-        
-        // Add user to access tracking if not already there
+
         if (userAccessIndex[_fileId][_user] == 0) {
             fileUsersWithAccess[_fileId].push(_user);
             userAccessIndex[_fileId][_user] = fileUsersWithAccess[_fileId].length;
         }
-        
-        // Store wrapped key for this user
+
         userWrappedKeys[_fileId][_user] = _wrappedKey;
-        
+
         emit ReadGranted(_fileId, _user, _expiresAt);
         emit KeyShared(_fileId, _user, _wrappedKey);
     }
@@ -248,19 +259,14 @@ contract FileRegistryV2 {
     /**
      * @dev Revoke all access from a user
      */
-    function revokeAccess(uint256 _fileId, address _user)
-        public onlyFileOwner(_fileId) fileExists(_fileId) {
+    function revokeAccess(uint256 _fileId, address _user) public onlyFileOwner(_fileId) fileExists(_fileId) {
         canRead[_fileId][_user] = false;
         canWrite[_fileId][_user] = false;
         accessExpiresAt[_fileId][_user] = 0;
-        
-        // Remove wrapped key
         delete userWrappedKeys[_fileId][_user];
-        
-        // Remove user from access tracking
+
         uint256 userIndex = userAccessIndex[_fileId][_user];
         if (userIndex > 0) {
-            // Swap with last element and pop
             address[] storage users = fileUsersWithAccess[_fileId];
             if (userIndex <= users.length) {
                 address lastUser = users[users.length - 1];
@@ -270,41 +276,27 @@ contract FileRegistryV2 {
                 delete userAccessIndex[_fileId][_user];
             }
         }
-        
+
         emit AccessRevoked(_fileId, _user);
     }
 
-    /**
-     * @dev Deactivate a file (soft delete)
-     */
-    function deactivateFile(uint256 _fileId)
-        public onlyFileOwner(_fileId) fileExists(_fileId) {
+    function deactivateFile(uint256 _fileId) public onlyFileOwner(_fileId) fileExists(_fileId) {
         files[_fileId].isActive = false;
         emit FileDeactivated(_fileId, msg.sender);
     }
 
-    /**
-     * @dev Get wrapped key for encrypted file (requires read access)
-     */
-    function getWrappedKey(uint256 _fileId) 
-        public view hasValidAccess(_fileId, msg.sender) returns (string memory) {
+    function getWrappedKey(uint256 _fileId) public view hasValidAccess(_fileId, msg.sender) returns (string memory) {
         require(files[_fileId].isEncrypted, "File is not encrypted");
         string memory wrappedKey = userWrappedKeys[_fileId][msg.sender];
         require(bytes(wrappedKey).length > 0, "No wrapped key found for user");
         return wrappedKey;
     }
 
-    /**
-     * @dev Check if user's access has expired
-     */
     function isAccessExpired(uint256 _fileId, address _user) public view returns (bool) {
         uint256 expiresAt = accessExpiresAt[_fileId][_user];
         return expiresAt > 0 && expiresAt <= block.timestamp;
     }
 
-    /**
-     * @dev Get access information for a user
-     */
     function getAccessInfo(uint256 _fileId, address _user) public view returns (
         bool hasRead,
         bool hasWrite,
@@ -319,9 +311,7 @@ contract FileRegistryV2 {
         expired = isAccessExpired(_fileId, _user);
     }
 
-    /**
-     * @dev Getters
-     */
+    // --- Getters ---
     function getFileInfo(uint256 _fileId)
         public view fileExists(_fileId)
         returns (
@@ -333,7 +323,8 @@ contract FileRegistryV2 {
             bool isActive,
             string memory metadataCID,
             bool isEncrypted,
-            string memory masterKeyHash
+            string memory masterKeyHash,
+            uint256 versionCount
         )
     {
         FileRecord memory file = files[_fileId];
@@ -346,7 +337,8 @@ contract FileRegistryV2 {
             file.isActive,
             file.metadataCID,
             file.isEncrypted,
-            file.masterKeyHash
+            file.masterKeyHash,
+            file.versionCount
         );
     }
 
@@ -355,23 +347,17 @@ contract FileRegistryV2 {
     }
 
     function hasReadAccess(uint256 _fileId, address _user) public view returns (bool) {
-        return (files[_fileId].uploader == _user || canRead[_fileId][_user]) && 
-               !isAccessExpired(_fileId, _user);
+        return (files[_fileId].uploader == _user || canRead[_fileId][_user]) && !isAccessExpired(_fileId, _user);
     }
 
     function hasWriteAccess(uint256 _fileId, address _user) public view returns (bool) {
-        return (files[_fileId].uploader == _user || canWrite[_fileId][_user]) && 
-               !isAccessExpired(_fileId, _user);
+        return (files[_fileId].uploader == _user || canWrite[_fileId][_user]) && !isAccessExpired(_fileId, _user);
     }
 
     function getTotalFiles() public view returns (uint256) {
         return nextFileId - 1;
     }
 
-    /**
-     * @dev Get all users who have access to a specific file
-     * Returns addresses that have been explicitly granted read or write access
-     */
     function getUsersWithAccess(uint256 _fileId) public view fileExists(_fileId) returns (address[] memory) {
         return fileUsersWithAccess[_fileId];
     }

@@ -107,13 +107,15 @@ export async function uploadEncryptedFileWithMetadata(
     // Step 4: Update metadata with metadata CID
     metadata.ipfs.metadataCID = metadataCID;
 
-    // Step 5: Upload to blockchain (pass 4 args)
+    // Step 5: Upload to blockchain (pass 6 args)
     const contract = getWriteContract();
     const txHash = await contract.write.uploadFileHash([
       metadataCID, // store metadata CID as fileHash on-chain
       originalFile.name,
       BigInt(originalFile.size),
-      metadataCID,
+      metadataCID, // metadataCID
+      false, // isEncrypted (default to false for now)
+      "0x", // masterKeyHash (empty for non-encrypted files)
     ]);
 
     // Step 6: Get file ID from blockchain via mapping
@@ -205,9 +207,8 @@ export async function verifyFileAccess(
 ): Promise<boolean> {
   try {
     const contract = getReadContract();
-
-    // Resolve fileId via mapping
-    const fileIdBig = (await contract.read.hashToFileId([
+    // Resolve fileId via metadata mapping
+    const fileIdBig = (await contract.read.metadataToFileId([
       metadataCID,
     ])) as bigint;
     if (fileIdBig === BigInt(0)) return false;
@@ -237,11 +238,16 @@ export async function shareFile(
     // Resolve fileId
     const read = getReadContract();
     const write = getWriteContract();
-    const fileIdBig = (await read.read.hashToFileId([metadataCID])) as bigint;
+    const fileIdBig = (await read.read.metadataToFileId([
+      metadataCID,
+    ])) as bigint;
     if (fileIdBig === BigInt(0)) throw new Error("File not found on chain");
-
     // Grant read on-chain (only owner can)
-    await write.write.grantRead([fileIdBig, targetAddress as `0x${string}`]);
+    await write.write.grantRead([
+      fileIdBig,
+      targetAddress as `0x${string}`,
+      BigInt(0),
+    ]);
 
     // Update metadata
     const metadata = await retrieveMetadata(metadataCID);

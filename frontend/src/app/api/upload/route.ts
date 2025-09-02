@@ -17,6 +17,14 @@ export async function POST(request: Request) {
     const name = incoming.get("name");
     const shouldEncrypt = incoming.get("encrypt") === "true"; // New parameter for encryption
 
+    // Version update parameters
+    const isVersionUpdate = incoming.get("isVersionUpdate") === "true";
+    const originalFileId = incoming.get("originalFileId") as string;
+    const originalMetadataCID = incoming.get("originalMetadataCID") as string;
+    const originalBlockchainFileId = incoming.get(
+      "originalBlockchainFileId"
+    ) as string;
+
     console.log("Encryption requested:", shouldEncrypt); // Debug log
 
     if (!(file instanceof File)) {

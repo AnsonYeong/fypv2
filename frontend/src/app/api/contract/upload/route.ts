@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
       // Resolve fileId via mapping
       const read = getReadContract();
-      const fileId = (await (read as any).read.hashToFileId([
+      const fileId = (await (read as any).read.metadataToFileId([
         metadataCID,
       ])) as bigint;
 

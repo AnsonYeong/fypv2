@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       // Get additional blockchain information
       try {
         const contract = getReadContract();
-        const fileIdBig = (await contract.read.hashToFileId([
+        const fileIdBig = (await contract.read.metadataToFileId([
           metadataCID,
         ])) as bigint;
 
