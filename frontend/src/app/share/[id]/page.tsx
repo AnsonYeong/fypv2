@@ -181,6 +181,7 @@ export default function ShareAccessPage() {
 
       const abi = parseAbi([
         "function hashToFileId(string) view returns (uint256)",
+        "function metadataToFileId(string) view returns (uint256)",
         "function hasReadAccess(uint256, address) view returns (bool)",
         "function getWrappedKey(uint256) view returns (string)",
         "function getAccessInfo(uint256, address) view returns (bool, bool, uint256, uint256, bool)",

@@ -101,12 +101,15 @@ export function PermissionsDialog({
     },
   ]);
 
+  // Single stable dependency key for the effect
+  const depCID = (file.metadataCID || file.cid || "") as string;
+
   // Load user access information from blockchain
   useEffect(() => {
-    if (isOpen && file.cid) {
+    if (isOpen && depCID) {
       loadUserAccess();
     }
-  }, [isOpen, file.cid]);
+  }, [isOpen, depCID]);
 
   const loadUserAccess = async () => {
     setIsLoading(true);
@@ -146,10 +149,9 @@ export function PermissionsDialog({
       const contractAddress = process.env
         .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
       const abi = parseAbi([
-        "function hashToFileId(string) view returns (uint256)",
+        "function metadataToFileId(string) view returns (uint256)",
         "function getAccessInfo(uint256, address) view returns (bool canRead, bool canWrite, uint256 grantedAt, uint256 expiresAt)",
         "function getUsersWithAccess(uint256) view returns (address[])",
-        "function getUserFiles(address) view returns (uint256[])",
         "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string)",
       ]);
       const contract = getContract({
@@ -166,61 +168,17 @@ export function PermissionsDialog({
       );
       console.log("🔍 Contract address:", contractAddress);
 
-      // The blockchain stores metadata CID, not file CID
-      // Use metadataCID if available, otherwise fall back to cid
+      // The blockchain stores metadata CID; resolve fileId via metadataToFileId
       const lookupCID = file.metadataCID || file.cid;
-      let fileId = await contract.read.hashToFileId([lookupCID]);
+      let fileId = await contract.read.metadataToFileId([lookupCID]);
       console.log(
         "🔍 File ID from lookup CID:",
         fileId ? fileId.toString() : "Not found"
       );
-
-      // If not found, try to find the file by searching through user's files
       if (!fileId || fileId === BigInt(0)) {
-        console.log(
-          "File not found with lookup CID, searching through user's files..."
-        );
-
-        try {
-          // Get current user's account
-          const [account] = await walletClient.getAddresses();
-
-          // Get all files for the current user
-          const userFiles = await contract.read.getUserFiles([account]);
-          console.log("User has", userFiles.length, "files on blockchain");
-
-          // Look through user's files to find one that matches
-          for (const userFileId of userFiles) {
-            try {
-              const fileInfo = await contract.read.getFileInfo([userFileId]);
-              console.log("Checking file ID", userFileId, "name:", fileInfo[1]);
-
-              // Check if this file's name matches
-              if (fileInfo[1] === file.name) {
-                fileId = userFileId;
-                console.log(
-                  "Found matching file by name:",
-                  fileInfo[1],
-                  "with ID:",
-                  fileId
-                );
-                break;
-              }
-            } catch (error) {
-              console.log("Error checking file", userFileId, ":", error);
-              continue;
-            }
-          }
-        } catch (error) {
-          console.log("Error searching user files:", error);
-        }
-
-        // If still not found, show empty list
-        if (!fileId || fileId === BigInt(0)) {
-          console.log("Could not find file on blockchain, showing empty list");
-          setUserAccess([]);
-          return;
-        }
+        console.log("Could not find file on blockchain, showing empty list");
+        setUserAccess([]);
+        return;
       }
 
       console.log("✅ Found file on blockchain with ID:", fileId.toString());
@@ -310,7 +268,7 @@ export function PermissionsDialog({
       const contractAddress = process.env
         .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
       const abi = parseAbi([
-        "function hashToFileId(string) view returns (uint256)",
+        "function metadataToFileId(string) view returns (uint256)",
         "function grantRead(uint256, address, uint256) external",
         "function grantWrite(uint256, address, uint256) external",
         "function revokeAccess(uint256, address) external",
@@ -321,7 +279,7 @@ export function PermissionsDialog({
         client: { public: publicClient, wallet: walletClient as any },
       }) as any;
 
-      const fileId = await contract.read.hashToFileId([file.cid]);
+      const fileId = await contract.read.metadataToFileId([file.cid]);
       if (!fileId || fileId === BigInt(0)) return;
 
       const expiresAt = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // 30 days
@@ -402,7 +360,7 @@ export function PermissionsDialog({
       const contractAddress = process.env
         .NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
       const abi = parseAbi([
-        "function hashToFileId(string) view returns (uint256)",
+        "function metadataToFileId(string) view returns (uint256)",
         "function grantRead(uint256, address, uint256) external",
         "function grantWrite(uint256, address, uint256) external",
         "function revokeAccess(uint256, address) external",
@@ -419,7 +377,7 @@ export function PermissionsDialog({
 
       // Use metadataCID if available, otherwise fall back to cid
       const lookupCID = file.metadataCID || file.cid;
-      const fileId = await contract.read.hashToFileId([lookupCID]);
+      const fileId = await contract.read.metadataToFileId([lookupCID]);
       console.log(
         `🆔 File ID from lookup CID:`,
         fileId ? fileId.toString() : "Not found"

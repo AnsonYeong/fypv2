@@ -90,7 +90,7 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
       const abi = parseAbi([
         "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string)",
         "function getAccessInfo(uint256, address) view returns (bool, bool, uint256, uint256, bool)",
-        "function getUserFiles(address) view returns (uint256[])",
+        "function metadataToFileId(string) view returns (uint256)",
       ]);
 
       const contract = getContract({
@@ -99,15 +99,14 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
         client: { public: publicClient, wallet: walletClient as any },
       }) as any; // Type assertion to avoid complex viem types
 
-      // Get current user's files to find the file ID
-      const userFiles = (await contract.read.getUserFiles([
-        account,
-      ])) as bigint[];
-
-      // For now, we'll assume the file is the most recent one
-      // In a real implementation, you'd want to store fileId in the AppFile interface
+      // Resolve fileId from the file's metadataCID
+      const fileIdFromMeta = await contract.read.metadataToFileId([
+        (file.metadataCID || file.cid) as string,
+      ]);
       const latestFileId =
-        userFiles.length > 0 ? userFiles[userFiles.length - 1] : BigInt(1);
+        fileIdFromMeta && fileIdFromMeta !== BigInt(0)
+          ? fileIdFromMeta
+          : BigInt(1);
 
       // Load access info for common addresses (this is a simplified approach)
       const commonAddresses = [
@@ -197,7 +196,7 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
         "function shareEncryptedFile(uint256, address, string, uint256)",
         "function grantRead(uint256, address, uint256)",
         "function grantWrite(uint256, address, uint256)",
-        "function getUserFiles(address) view returns (uint256[])",
+        "function metadataToFileId(string) view returns (uint256)",
       ]);
 
       const contract = getContract({
@@ -206,12 +205,13 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
         client: { public: publicClient, wallet: walletClient as any },
       }) as any;
 
-      // Get file ID (simplified approach)
-      const userFiles = (await contract.read.getUserFiles([
-        account,
-      ])) as bigint[];
-      const fileId =
-        userFiles.length > 0 ? userFiles[userFiles.length - 1] : BigInt(1);
+      // Resolve file ID via metadata
+      const fileId = await contract.read.metadataToFileId([
+        (file.metadataCID || file.cid) as string,
+      ]);
+      if (!fileId || fileId === BigInt(0)) {
+        throw new Error("Unable to resolve file ID from metadataCID");
+      }
 
       // Calculate expiration timestamp
       const expiresAt =
@@ -322,7 +322,7 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
 
       const abi = parseAbi([
         "function revokeAccess(uint256, address)",
-        "function getUserFiles(address) view returns (uint256[])",
+        "function metadataToFileId(string) view returns (uint256)",
       ]);
 
       const contract = getContract({
@@ -331,11 +331,12 @@ export function ShareDialog({ isOpen, setIsOpen, file }: ShareDialogProps) {
         client: { public: publicClient, wallet: walletClient as any },
       }) as any;
 
-      const userFiles = (await contract.read.getUserFiles([
-        account,
-      ])) as bigint[];
-      const fileId =
-        userFiles.length > 0 ? userFiles[userFiles.length - 1] : BigInt(1);
+      const fileId = await contract.read.metadataToFileId([
+        (file.metadataCID || file.cid) as string,
+      ]);
+      if (!fileId || fileId === BigInt(0)) {
+        throw new Error("Unable to resolve file ID from metadataCID");
+      }
 
       const txHash = await contract.write.revokeAccess(
         [fileId, address as `0x${string}`],

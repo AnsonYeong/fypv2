@@ -48,11 +48,19 @@ export function FileUploadDialog({
     if (file) {
       setSelectedFile(file);
       setFileName(file.name);
+      // Auto-prompt password upon selecting a file
+      setShouldEncrypt(true);
+      setShowPasswordDialog(true);
     }
   };
 
   const handleUpload = async () => {
     if (!selectedFile || !fileName) return;
+    // If encryption is enabled but no password provided, prompt first
+    if (shouldEncrypt && !encryptionPassword.trim()) {
+      setShowPasswordDialog(true);
+      return;
+    }
     try {
       setIsUploading(true);
       const form = new FormData();
@@ -604,22 +612,6 @@ export function FileUploadDialog({
                 )}
               </div>
 
-              {/* Encryption Option */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="encrypt-file"
-                  checked={shouldEncrypt}
-                  onChange={(e) => handleEncryptionChange(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label
-                  htmlFor="encrypt-file"
-                  className="text-sm font-medium text-gray-700"
-                >
-                  🔐 Encrypt file before upload (AES-256)
-                </label>
-              </div>
               {shouldEncrypt && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                   <p className="text-sm text-blue-800">
