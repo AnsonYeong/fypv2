@@ -5,6 +5,10 @@ import { AppFile, saveFilesToStorage, getFilesFromStorage } from "@/lib/data";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  handleTransactionError,
+  TransactionResult,
+} from "@/lib/transaction-error-handler";
 import { Upload, X, Loader2 } from "lucide-react";
 import { createFileMetadata } from "@/lib/metadata";
 import { generateSHA256 } from "@/lib/metadata";
@@ -36,6 +40,12 @@ export function FileUploadDialog({
   const [encryptionPassword, setEncryptionPassword] = useState("");
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState<{
+    title: string;
+    message: string;
+    error?: any;
+    onRetry?: () => void;
+  } | null>(null);
 
   const [uploadedCid, setUploadedCid] = useState<string>("");
   const [uploadedFilename, setUploadedFilename] = useState<string>("");
@@ -130,42 +140,7 @@ export function FileUploadDialog({
             : undefined,
       };
 
-      // Save to localStorage for the current user
-      try {
-        const existingFiles = getFilesFromStorage(userId);
-        let updatedFiles: AppFile[];
-
-        if (isVersionUpdate && originalFile) {
-          // For version updates, replace the original file with updated version
-          updatedFiles = existingFiles.map((file) =>
-            file.id === originalFile.id
-              ? {
-                  ...newFile,
-                  // Preserve original file properties that shouldn't change
-                  id: originalFile.id,
-                  owner: originalFile.owner,
-                  sharedWith: originalFile.sharedWith,
-                  permissions: originalFile.permissions,
-                  // Update version-related properties
-                  lastModified: new Date(),
-                  size: selectedFile.size,
-                  cid: cid,
-                  metadataCID: newFile.metadataCID || cid,
-                  gatewayUrl: gatewayUrl,
-                }
-              : file
-          );
-        } else {
-          // For new uploads, add to the beginning
-          updatedFiles = [newFile, ...existingFiles];
-        }
-
-        saveFilesToStorage(updatedFiles, userId);
-      } catch (error) {
-        console.error("Error saving to localStorage:", error);
-      }
-
-      onFileUploaded(newFile);
+      // Note: File will be saved to localStorage and dashboard AFTER blockchain transaction succeeds
 
       // Store the CID and filename for display
       setUploadedCid(cid);
@@ -387,10 +362,14 @@ export function FileUploadDialog({
               }
             } catch (chainErr) {
               console.error("Client-side contract call error:", chainErr);
+              // Re-throw the error so it can be caught by the main catch block
+              throw chainErr;
             }
           }
         } catch (metaErr) {
           console.error("Metadata processing error:", metaErr);
+          // Re-throw the error so it can be caught by the main catch block
+          throw metaErr;
         }
       }
 
@@ -449,19 +428,115 @@ export function FileUploadDialog({
           console.log("Metadata CID:", metadataCID);
         }
 
+        // Save to localStorage and update dashboard ONLY after blockchain transaction succeeds
+        try {
+          const existingFiles = getFilesFromStorage(userId);
+          let updatedFiles: AppFile[];
+
+          if (isVersionUpdate && originalFile) {
+            // For version updates, replace the original file with updated version
+            updatedFiles = existingFiles.map((file) =>
+              file.id === originalFile.id
+                ? {
+                    ...newFile,
+                    // Preserve original file properties that shouldn't change
+                    id: originalFile.id,
+                    owner: originalFile.owner,
+                    sharedWith: originalFile.sharedWith,
+                    permissions: originalFile.permissions,
+                    // Update version-related properties
+                    lastModified: new Date(),
+                    size: selectedFile.size,
+                    cid: cid,
+                    metadataCID: newFile.metadataCID || cid,
+                    gatewayUrl: gatewayUrl,
+                  }
+                : file
+            );
+          } else {
+            // For new uploads, add to the beginning
+            updatedFiles = [newFile, ...existingFiles];
+          }
+
+          saveFilesToStorage(updatedFiles, userId);
+          onFileUploaded(newFile);
+        } catch (error) {
+          console.error("Error saving to localStorage:", error);
+        }
+
         setUploadSuccess(true);
+
         // Close dialog after a brief delay to show success
         setTimeout(() => {
           setIsOpen(false);
           resetForm();
         }, 2000);
       } else {
-        // For non-encrypted files, close immediately
+        // For non-encrypted files, save to localStorage and update dashboard
+        try {
+          const existingFiles = getFilesFromStorage(userId);
+          let updatedFiles: AppFile[];
+
+          if (isVersionUpdate && originalFile) {
+            // For version updates, replace the original file with updated version
+            updatedFiles = existingFiles.map((file) =>
+              file.id === originalFile.id
+                ? {
+                    ...newFile,
+                    // Preserve original file properties that shouldn't change
+                    id: originalFile.id,
+                    owner: originalFile.owner,
+                    sharedWith: originalFile.sharedWith,
+                    permissions: originalFile.permissions,
+                    // Update version-related properties
+                    lastModified: new Date(),
+                    size: selectedFile.size,
+                    cid: cid,
+                    metadataCID: newFile.metadataCID || cid,
+                    gatewayUrl: gatewayUrl,
+                  }
+                : file
+            );
+          } else {
+            // For new uploads, add to the beginning
+            updatedFiles = [newFile, ...existingFiles];
+          }
+
+          saveFilesToStorage(updatedFiles, userId);
+          onFileUploaded(newFile);
+        } catch (error) {
+          console.error("Error saving to localStorage:", error);
+        }
+
         setUploadSuccess(true);
+
         setTimeout(() => {
           setIsOpen(false);
           resetForm();
         }, 1500);
+      }
+    } catch (error: any) {
+      console.error("Upload error:", error);
+
+      // Handle transaction error
+      const transactionResult = handleTransactionError(error, "file upload");
+
+      if (transactionResult.error) {
+        setUploadError({
+          title: "Upload Failed",
+          message: transactionResult.error.userFriendlyMessage,
+          error: transactionResult.error,
+          onRetry: () => {
+            setUploadError(null);
+            handleUpload();
+          },
+        });
+      } else {
+        setUploadError({
+          title: "Upload Failed",
+          message:
+            error instanceof Error ? error.message : "Unknown error occurred",
+        });
       }
     } finally {
       setIsUploading(false);
@@ -477,6 +552,7 @@ export function FileUploadDialog({
     setEncryptionPassword("");
     setShowPasswordDialog(false);
     setUploadSuccess(false);
+    setUploadError(null);
   };
 
   const handleEncryptionChange = (checked: boolean) => {
@@ -565,6 +641,70 @@ export function FileUploadDialog({
               <p className="text-sm text-gray-500">
                 This dialog will close automatically...
               </p>
+            </div>
+          ) : uploadError ? (
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                <svg
+                  className="w-8 h-8 text-red-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {uploadError.title}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {uploadError.message}
+                </p>
+              </div>
+              {uploadError.error && (
+                <div className="p-3 bg-red-50 rounded-md">
+                  <p className="text-xs text-red-600">
+                    Error Code: {uploadError.error.code}
+                  </p>
+                  {uploadError.error.isUserCancelled && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      • Transaction was cancelled by user
+                    </p>
+                  )}
+                  {uploadError.error.isRetryable && (
+                    <p className="text-xs text-green-600 mt-1">
+                      • This error can be retried
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="flex space-x-3 justify-center">
+                {uploadError.onRetry && (
+                  <Button
+                    onClick={uploadError.onRetry}
+                    variant="outline"
+                    className="text-sm"
+                  >
+                    Try Again
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    setUploadError(null);
+                    setIsOpen(false);
+                  }}
+                  variant="default"
+                  className="text-sm"
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           ) : (
             <>

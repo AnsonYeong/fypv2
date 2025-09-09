@@ -2,6 +2,14 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  TransactionNotification,
+  useTransactionNotification,
+} from "@/components/ui/transaction-notification";
+import {
+  handleTransactionError,
+  TransactionResult,
+} from "@/lib/transaction-error-handler";
 import { Download, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { FileDownloadService, DownloadResult } from "@/lib/file-download";
 
@@ -32,6 +40,10 @@ export function OneClickDownload({
   >("idle");
   const [error, setError] = useState<string | null>(null);
 
+  // Transaction notification hook
+  const { notification, showSuccess, showError, hideNotification } =
+    useTransactionNotification();
+
   const handleDownload = async () => {
     // Prompt user for password
     const password = prompt(
@@ -60,6 +72,12 @@ export function OneClickDownload({
         // Automatically download the file to user's device
         FileDownloadService.downloadFileToDevice(result.file);
 
+        // Show success notification
+        showSuccess(
+          "Download Successful",
+          `"${result.file.name}" has been downloaded successfully.`
+        );
+
         // Call success callback if provided
         if (onSuccess) {
           onSuccess(result);
@@ -78,6 +96,23 @@ export function OneClickDownload({
         const errorMessage = result.error || "Download failed";
         setError(errorMessage);
 
+        // Handle transaction error
+        const transactionResult = handleTransactionError(
+          new Error(errorMessage),
+          "file download"
+        );
+
+        if (transactionResult.error) {
+          showError(
+            "Download Failed",
+            transactionResult.error.userFriendlyMessage,
+            transactionResult.error,
+            () => handleDownload() // Retry function
+          );
+        } else {
+          showError("Download Failed", errorMessage);
+        }
+
         // Call error callback if provided
         if (onError) {
           onError(errorMessage);
@@ -88,6 +123,20 @@ export function OneClickDownload({
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
       setError(errorMessage);
+
+      // Handle transaction error
+      const transactionResult = handleTransactionError(error, "file download");
+
+      if (transactionResult.error) {
+        showError(
+          "Download Failed",
+          transactionResult.error.userFriendlyMessage,
+          transactionResult.error,
+          () => handleDownload() // Retry function
+        );
+      } else {
+        showError("Download Failed", errorMessage);
+      }
 
       // Call error callback if provided
       if (onError) {
@@ -160,23 +209,36 @@ export function OneClickDownload({
   };
 
   return (
-    <div className="inline-block">
-      <Button
-        onClick={handleDownload}
-        disabled={isDownloading || status === "downloading"}
-        variant={getButtonVariant()}
-        size={size === "md" ? "default" : size}
-        className={getButtonClassName()}
-      >
-        {getButtonContent()}
-      </Button>
+    <>
+      <div className="inline-block">
+        <Button
+          onClick={handleDownload}
+          disabled={isDownloading || status === "downloading"}
+          variant={getButtonVariant()}
+          size={size === "md" ? "default" : size}
+          className={getButtonClassName()}
+        >
+          {getButtonContent()}
+        </Button>
 
-      {error && status === "error" && (
-        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-xs text-red-700">{error}</p>
-        </div>
-      )}
-    </div>
+        {error && status === "error" && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-xs text-red-700">{error}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Transaction Notification */}
+      <TransactionNotification
+        isVisible={notification.isVisible}
+        onClose={hideNotification}
+        title={notification.title}
+        message={notification.message}
+        type={notification.type}
+        error={notification.error}
+        onRetry={notification.onRetry}
+      />
+    </>
   );
 }
 
