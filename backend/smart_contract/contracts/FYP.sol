@@ -13,12 +13,15 @@ contract FileRegistryV2 {
         bool isEncrypted;       // Whether the file is encrypted
         string masterKeyHash;   // Hash of the master encryption key
         uint256 versionCount;   // Number of versions
+        string originalHash;    // SHA-256 of original content (deduplication)
     }
 
     mapping(uint256 => FileRecord) public files;
     mapping(address => uint256[]) public userFiles;
     mapping(string => uint256) public hashToFileId;
     mapping(string => uint256) public metadataToFileId; // Maps metadata CID to file ID
+    // Prevent duplicates of the same original content
+    mapping(string => uint256) public originalHashToFileId;
 
     // version history: fileId => list of metadataCIDs
     mapping(uint256 => string[]) public fileVersions;
@@ -107,13 +110,16 @@ contract FileRegistryV2 {
         uint256 _fileSize,
         string memory _metadataCID,
         bool _isEncrypted,
-        string memory _masterKeyHash
+        string memory _masterKeyHash,
+        string memory _originalHash
     ) public returns (uint256) {
         require(bytes(_fileHash).length > 0, "File hash cannot be empty");
         require(bytes(_fileName).length > 0, "File name cannot be empty");
         require(_fileSize > 0, "File size must be greater than 0");
         require(bytes(_metadataCID).length > 0, "metadataCID cannot be empty");
         require(hashToFileId[_fileHash] == 0, "File with this hash already exists");
+        require(bytes(_originalHash).length > 0, "originalHash cannot be empty");
+        require(originalHashToFileId[_originalHash] == 0, "File with this original content already exists");
 
         uint256 fileId = nextFileId++;
         files[fileId] = FileRecord({
@@ -126,12 +132,14 @@ contract FileRegistryV2 {
             metadataCID: _metadataCID,
             isEncrypted: _isEncrypted,
             masterKeyHash: _masterKeyHash,
-            versionCount: 1
+            versionCount: 1,
+            originalHash: _originalHash
         });
 
         userFiles[msg.sender].push(fileId);
         hashToFileId[_fileHash] = fileId;
         metadataToFileId[_metadataCID] = fileId;
+        originalHashToFileId[_originalHash] = fileId;
 
         // init version history
         fileVersions[fileId].push(_metadataCID);

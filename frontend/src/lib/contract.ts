@@ -199,6 +199,7 @@ const abi = [
       { internalType: "string", name: "_metadataCID", type: "string" },
       { internalType: "bool", name: "_isEncrypted", type: "bool" },
       { internalType: "string", name: "_masterKeyHash", type: "string" },
+      { internalType: "string", name: "_originalHash", type: "string" },
     ],
     name: "uploadFileHash",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
@@ -386,6 +387,13 @@ const abi = [
     name: "rollbackFile",
     outputs: [],
     stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "string", name: "", type: "string" }],
+    name: "originalHashToFileId",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
     type: "function",
   },
 ] as const;

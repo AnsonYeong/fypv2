@@ -268,10 +268,11 @@ export function FileUploadDialog({
               }
 
               const abi = parseAbi([
-                "function uploadFileHash(string _fileHash, string _fileName, uint256 _fileSize, string _metadataCID, bool _isEncrypted, string _masterKeyHash) returns (uint256)",
+                "function uploadFileHash(string _fileHash, string _fileName, uint256 _fileSize, string _metadataCID, bool _isEncrypted, string _masterKeyHash, string _originalHash) returns (uint256)",
                 "function updateFile(uint256 _fileId, string _newFileHash, uint256 _newFileSize, string _newMetadataCID)",
                 "function hashToFileId(string) view returns (uint256)",
                 "function metadataToFileId(string) view returns (uint256)",
+                "function originalHashToFileId(string) view returns (uint256)",
                 "function getFileInfo(uint256) view returns (string, string, uint256, address, uint256, bool, string, bool, string, uint256)",
               ]);
 
@@ -292,6 +293,35 @@ export function FileUploadDialog({
                   Number(existingId)
                 );
               } else {
+                // Also check for duplicate by original content hash
+                const duplicateByOriginal = (await (
+                  contract as any
+                ).read.originalHashToFileId([
+                  metadata.integrity.originalHash,
+                ])) as bigint;
+                if (duplicateByOriginal && duplicateByOriginal > BigInt(0)) {
+                  // Surface friendly dialog and abort transaction
+                  setUploadError({
+                    title: "Duplicate File Detected",
+                    message:
+                      "A similar file (same original content) already exists on the blockchain.",
+                    error: {
+                      code: "DUPLICATE_ORIGINAL_CONTENT",
+                      message: "File with this original content already exists",
+                      userFriendlyMessage:
+                        "A similar file (same original content) already exists on the blockchain.",
+                      isUserCancelled: false,
+                      isRetryable: false,
+                    },
+                  });
+                  // Clear inputs for a clean re-upload attempt
+                  setSelectedFile(null);
+                  setFileName("");
+                  setEncryptionPassword("");
+                  setShowPasswordDialog(false);
+                  return; // Abort without throwing to prevent generic catch handling
+                }
+
                 // Generate master key hash for encrypted files
                 const masterKeyHash =
                   encrypted && encryptionData
@@ -325,6 +355,7 @@ export function FileUploadDialog({
                       metaJson.metadataCID,
                       encrypted || false,
                       masterKeyHash,
+                      metadata.integrity.originalHash,
                     ],
                     { account }
                   );
@@ -518,18 +549,62 @@ export function FileUploadDialog({
     } catch (error: any) {
       console.error("Upload error:", error);
 
+      // Clear inputs for a clean re-upload attempt
+      setSelectedFile(null);
+      setFileName("");
+      setEncryptionPassword("");
+      setShowPasswordDialog(false);
+
       // Handle transaction error
       const transactionResult = handleTransactionError(error, "file upload");
 
+      // Fallback: detect duplicate original content directly from raw error to ensure friendly message
+      const collectTexts = (err: any): string[] => {
+        if (!err) return [];
+        const parts: string[] = [];
+        const candidates = [
+          err.details,
+          err.shortMessage,
+          err.message,
+          err.reason,
+          Array.isArray(err?.metaMessages)
+            ? err.metaMessages.join("\n")
+            : undefined,
+          err?.data?.message,
+        ];
+        for (const c of candidates)
+          if (typeof c === "string" && c.length) parts.push(c);
+        if (err.cause && err.cause !== err)
+          parts.push(...collectTexts(err.cause));
+        return parts;
+      };
+      const combined = collectTexts(error).join("\n").toLowerCase();
+      const isDuplicateOriginal = combined.includes(
+        "file with this original content already exists"
+      );
+
       if (transactionResult.error) {
+        const friendlyMessage = isDuplicateOriginal
+          ? "A similar file (same original content) already exists on the blockchain."
+          : transactionResult.error.userFriendlyMessage;
+        const friendlyCode = isDuplicateOriginal
+          ? "DUPLICATE_ORIGINAL_CONTENT"
+          : transactionResult.error.code;
+
         setUploadError({
-          title: "Upload Failed",
-          message: transactionResult.error.userFriendlyMessage,
-          error: transactionResult.error,
-          onRetry: () => {
-            setUploadError(null);
-            handleUpload();
+          title: isDuplicateOriginal
+            ? "Duplicate File Detected"
+            : "Upload Failed",
+          message: friendlyMessage,
+          error: {
+            ...transactionResult.error,
+            code: friendlyCode,
+            userFriendlyMessage: friendlyMessage,
+            isRetryable: isDuplicateOriginal
+              ? false
+              : transactionResult.error.isRetryable,
           },
+          // Do not auto-retry; force user to reselect a file after reset
         });
       } else {
         setUploadError({
@@ -570,6 +645,9 @@ export function FileUploadDialog({
         isOpen={isOpen}
         setIsOpen={(open) => {
           if (!open) {
+            resetForm();
+          } else {
+            // Ensure a fresh state every time the dialog opens
             resetForm();
           }
           setIsOpen(open);

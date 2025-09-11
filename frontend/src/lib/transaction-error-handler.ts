@@ -88,12 +88,54 @@ const ERROR_MAPPINGS: Record<
     userFriendlyMessage: "An unknown error occurred",
     isRetryable: true,
   },
+  // Custom app-specific errors
+  DUPLICATE_ORIGINAL_CONTENT: {
+    userFriendlyMessage:
+      "A similar file (same original content) already exists on the blockchain.",
+    isRetryable: false,
+  },
 };
 
 export function parseTransactionError(error: any): TransactionError {
   // Extract error code and message
   let code = "UNKNOWN_ERROR";
   let message = "Unknown error occurred";
+
+  // Helper: safely collect potential text fields for matching
+  const collectTexts = (err: any): string[] => {
+    if (!err) return [];
+    const texts: string[] = [];
+    const candidates = [
+      err.details,
+      err.shortMessage,
+      err.message,
+      err.reason,
+      err.data?.message,
+      Array.isArray(err.metaMessages) ? err.metaMessages.join("\n") : undefined,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.length) texts.push(c);
+    }
+    // recurse into cause if present
+    if (err.cause && err.cause !== err) {
+      texts.push(...collectTexts(err.cause));
+    }
+    return texts;
+  };
+
+  const allTexts = collectTexts(error).join("\n").toLowerCase();
+
+  // Detect specific revert reasons early (case-insensitive)
+  if (allTexts.includes("file with this original content already exists")) {
+    return {
+      code: "DUPLICATE_ORIGINAL_CONTENT",
+      message: collectTexts(error)[0] || "Duplicate original content",
+      userFriendlyMessage:
+        ERROR_MAPPINGS.DUPLICATE_ORIGINAL_CONTENT.userFriendlyMessage,
+      isUserCancelled: false,
+      isRetryable: false,
+    };
+  }
 
   // Handle viem ContractFunctionExecutionError
   if (error?.name === "ContractFunctionExecutionError") {
