@@ -79,7 +79,7 @@ export default function App() {
         <div className="fancy-border">
           <div className="centered-content bordered-inner">
             <BlurText
-              text="Blocksecure"
+              text="Blockshare"
               className="big-bold-white bitcount-grid-single"
               animateBy="words"
               direction="top"
